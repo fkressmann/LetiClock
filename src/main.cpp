@@ -2,10 +2,12 @@
 #include <FastLED.h>
 #include "ESP8266WiFi.h"
 #include <time.h>
+#include <WiFiClient.h>
+#include "ESP8266httpUpdate.h"
 #include <credentials.h>
 
 
-
+#define VERSION     "1.0"
 #define LED_PIN     2 //The data pin of the arduino
 #define NUM_LEDS    114 //Numbers of LED
 #define BRIGHTNESS  20 //Brightness of the LEDs
@@ -24,7 +26,9 @@ int currentSecond, currentMinute, currentHour;
 #define MY_NTP_SERVER "pool.ntp.org"           
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"  
 time_t now;
-tm tm;  
+tm tm;
+
+WiFiClient client;
 
 const char *matrix = 
 "ESKISTLF3NF"
@@ -37,6 +41,21 @@ const char *matrix =
 "ELFNEUNVIER"
 "WACHTZEHNRS"
 "BSECHSFMUHR";
+
+void update() {
+  t_httpUpdate_return ret = ESPhttpUpdate.update(client, "192.168.0.2", 80, "/esp/update/arduino.php", VERSION);
+  switch(ret) {
+    case HTTP_UPDATE_FAILED:
+        Serial.println("[update] Update failed.");
+        break;
+    case HTTP_UPDATE_NO_UPDATES:
+        Serial.println("[update] Update no Update.");
+        break;
+    case HTTP_UPDATE_OK:
+        Serial.println("[update] Update ok."); // may not be called since we reboot the ESP
+        break;
+  }
+}
 
 void fadeAll() {
   for (int i = 0; i < NUM_LEDS; i++) {
