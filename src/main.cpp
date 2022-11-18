@@ -7,7 +7,7 @@
 #include <credentials.h>
 
 
-#define VERSION     "1.0"
+#define VERSION     "LetiClock-v3"
 #define LED_PIN     2 //The data pin of the arduino
 #define NUM_LEDS    114 //Numbers of LED
 #define BRIGHTNESS  20 //Brightness of the LEDs
@@ -43,18 +43,21 @@ const char *matrix =
 "BSECHSFMUHR";
 
 void update() {
-  t_httpUpdate_return ret = ESPhttpUpdate.update(client, "192.168.0.2", 80, "/esp/update/arduino.php", VERSION);
+  Serial.println("Checking for updates...");
+  t_httpUpdate_return ret = ESPhttpUpdate.update(client, "192.168.2.110", 34252, "/server.php", VERSION);
   switch(ret) {
     case HTTP_UPDATE_FAILED:
-        Serial.println("[update] Update failed.");
+        Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s", ESPhttpUpdate.getLastError(), ESPhttpUpdate.getLastErrorString().c_str());
         break;
+
     case HTTP_UPDATE_NO_UPDATES:
-        Serial.println("[update] Update no Update.");
+        Serial.println("HTTP_UPDATE_NO_UPDATES");
         break;
+
     case HTTP_UPDATE_OK:
-        Serial.println("[update] Update ok."); // may not be called since we reboot the ESP
+        Serial.println("HTTP_UPDATE_OK");
         break;
-  }
+    }
 }
 
 void fadeAll() {
@@ -139,7 +142,7 @@ void wordVOR(int r, int g, int b) {
 void wordHALB(int r, int g, int b) {
   showLed(44, r, g, b);
   showLed(45, r, g, b);
-  showLed(56, r, g, b);
+  showLed(46, r, g, b);
   showLed(47, r, g, b);
 }
 void wordZWOELF(int r, int g, int b) {
@@ -289,7 +292,8 @@ void showWord(char *word, int wordLength) {
 
 void setup() {
   Serial.begin(115200);
-
+  Serial.print("Firmware version: ");
+  Serial.println(VERSION);
   // Connect to WiFi
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
@@ -298,6 +302,7 @@ void setup() {
   }
   Serial.println("");
   Serial.println("WiFi connected");
+  update();
 
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection( TypicalLEDStrip );
   FastLED.setBrightness(  BRIGHTNESS );

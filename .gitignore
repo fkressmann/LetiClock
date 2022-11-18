@@ -4,4 +4,4 @@
 .vscode/launch.json
 .vscode/ipch
 /src/credentials.h
-/update_Server/firmware.bin
+/update_Server/*.bin
