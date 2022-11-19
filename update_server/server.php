@@ -1,7 +1,7 @@
 <?PHP
 
 $db = array(
-    "80:7D:3A:79:01:7B" => "LetiClock-v3"
+    "80:7D:3A:79:01:7B" => "LetiClock-v5"
 );
 
 header('Content-type: text/plain; charset=utf8', true);
@@ -77,24 +77,19 @@ function doesFirmwareHashMatch($xESPsketchmd, $localBinary)
  * @param $versionFromHeaders
  * @return bool
  */
-function doesVersionMatch($versionFromDb, $versionFromHeaders)
+function isNewerVersionAvailable($versionFromDb, $versionFromHeaders)
 {
-    $b = $versionFromDb == $versionFromHeaders;
+    $b = $versionFromDb > $versionFromHeaders;
     return $b;
 }
 
 error_log("Chip " . $headers["x-ESP8266-STA-MAC"] . " with firmware: " . $headers['x-ESP8266-version'] . " asking for update");
 
 
-if (
-    (!check_header('x-ESP8266-sdk-version') // SDK version not set
-        && !doesVersionMatch($db[$headers['x-ESP8266-STA-MAC']], $headers['x-ESP8266-version'])) // and version is not identical
-    || !doesFirmwareHashMatch($headers["x-ESP8266-sketch-md5"], $localBinary) // OR firmware hash is different
-) {
+if (isNewerVersionAvailable($db[$headers['x-ESP8266-STA-MAC']], $headers['x-ESP8266-version'])) {
     error_log('Sending binary ' . $localBinary);
     sendFile($localBinary);
 } else {
     error_log('No update required');
     header($_SERVER["SERVER_PROTOCOL"] . ' 304 Not Modified', true, 304);
 }
-?>
