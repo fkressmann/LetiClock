@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/LetiClock.iml" filepath="$PROJECT_DIR$/.idea/LetiClock.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/LetiClock2.iml" filepath="$PROJECT_DIR$/.idea/LetiClock2.iml" />
     </modules>
   </component>
 </project>

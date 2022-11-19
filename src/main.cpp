@@ -6,6 +6,7 @@
 #include "ESP8266httpUpdate.h"
 #include <credentials.h>
 
+#define DEVELOPMENT
 
 
 #define VERSION     "LetiClock-v5"
@@ -349,61 +350,60 @@ void loop() {
 
     wordES(color(), color(), color());
     wordIST(color(), color(), color());
-    wordUHR(color(), color(), color());
 
-    if (currentMinute >= 2 && currentMinute < 7) {
+    if (currentMinute >= 0 && currentMinute < 5) {
+        wordUHR(color(), color(), color());
+    }
+    if (currentMinute >= 5 && currentMinute < 10) {
         wordFUENF(color(), color(), color());
         wordNACH(color(), color(), color());
     }
-    if (currentMinute >= 7 && currentMinute < 12) {
+    if (currentMinute >= 10 && currentMinute < 15) {
         wordZEHN(color(), color(), color());
         wordNACH(color(), color(), color());
     }
-    if (currentMinute >= 12 && currentMinute < 17) {
+    if (currentMinute >= 15 && currentMinute < 20) {
         wordVIERTEL(color(), color(), color());
         wordNACH(color(), color(), color());
     }
-    if (currentMinute >= 17 && currentMinute < 22) {
+    if (currentMinute >= 20 && currentMinute < 25) {
         wordZWANZIG(color(), color(), color());
         wordNACH(color(), color(), color());
     }
-    if (currentMinute >= 22 && currentMinute < 27) {
+    if (currentMinute >= 25 && currentMinute < 30) {
         wordFUENF(color(), color(), color());
         wordVOR(color(), color(), color());
         wordHALB(color(), color(), color());
         currentHour += 1;
     }
-    if (currentMinute >= 27 && currentMinute < 32) {
+    if (currentMinute >= 30 && currentMinute < 35) {
         wordHALB(color(), color(), color());
         currentHour += 1;
     }
-    if (currentMinute >= 32 && currentMinute < 37) {
+    if (currentMinute >= 35 && currentMinute < 40) {
         wordFUENF(color(), color(), color());
         wordNACH(color(), color(), color());
         wordHALB(color(), color(), color());
         currentHour += 1;
     }
-    if (currentMinute >= 37 && currentMinute < 42) {
+    if (currentMinute >= 40 && currentMinute < 45) {
         wordZWANZIG(color(), color(), color());
         wordVOR(color(), color(), color());
         currentHour += 1;
     }
-    if (currentMinute >= 42 && currentMinute < 47) {
+    if (currentMinute >= 45 && currentMinute < 50) {
         wordDREI(color(), color(), color());
         wordVIERTEL(color(), color(), color());
         wordNACH(color(), color(), color());
     }
-    if (currentMinute >= 47 && currentMinute < 52) {
+    if (currentMinute >= 50 && currentMinute < 55) {
         wordZEHN(color(), color(), color());
         wordVOR(color(), color(), color());
         currentHour += 1;
     }
-    if (currentMinute >= 52 && currentMinute < 57) {
+    if (currentMinute >= 55) {
         wordZEHN(color(), color(), color());
         wordVOR(color(), color(), color());
-        currentHour += 1;
-    }
-    if (currentMinute >= 57 && currentMinute <= 59) {
         currentHour += 1;
     }
 
