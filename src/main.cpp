@@ -167,6 +167,12 @@ void wordZWEI(int r, int g, int b) {
     showLed(62, r, g, b);
 }
 
+void wordEIN(int r, int g, int b) {
+    showLed(63, r, g, b);
+    showLed(62, r, g, b);
+    showLed(61, r, g, b);
+}
+
 void wordEINS(int r, int g, int b) {
     showLed(63, r, g, b);
     showLed(62, r, g, b);
@@ -343,7 +349,6 @@ void loop() {
     Serial.println();
 
     currentHour = tm.tm_hour;
-    if (currentHour > 12) currentHour = currentHour - 12;
     currentMinute = tm.tm_min;
     currentSecond = tm.tm_sec;
 
@@ -402,14 +407,20 @@ void loop() {
         currentHour += 1;
     }
     if (currentMinute >= 55) {
-        wordZEHN(color(), color(), color());
+        wordFUENF(color(), color(), color());
         wordVOR(color(), color(), color());
         currentHour += 1;
     }
 
+    if (currentHour > 12) currentHour = currentHour - 12;
+
     switch (currentHour) {
         case 1:
-            wordEINS(color(), color(), color());
+            if (currentMinute >= 0 && currentMinute < 5) {
+                wordEIN(color(), color(), color());
+            } else {
+                wordEINS(color(), color(), color());
+            }
             break;
         case 2:
             wordZWEI(color(), color(), color());
@@ -442,8 +453,6 @@ void loop() {
             wordELF(color(), color(), color());
             break;
         case 12:
-            wordZWOELF(color(), color(), color());
-            break;
         case 0:
             wordZWOELF(color(), color(), color());
             break;
