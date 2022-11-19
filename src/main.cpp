@@ -4,6 +4,9 @@
 #include <time.h>
 #include <WiFiClient.h>
 #include "ESP8266httpUpdate.h"
+#include <DNSServer.h>
+#include <ESP8266WebServer.h>
+#include <WiFiManager.h>
 #include <credentials.h>
 
 #define DEVELOPMENT
@@ -34,15 +37,15 @@ WiFiClient client;
 
 const char *matrix =
         "ESKISTLF3NF"
-        "ZEHNZWANZIG"
+        "GIZNAWZNHEZ" // reversed
         "DREIVIERTEL"
-        "TGNACJVORJM"
+        "MJROVJCANGT" // reversed
         "HALBQZW2LFP"
-        "ZWEINSIEBEN"
+        "NEBEISNIEWZ" // reversed
         "KDREIRHF3NF"
-        "ELFNEUNVIER"
+        "REIVNUENFLE" // reversed
         "WACHTZEHNRS"
-        "BSECHSFMUHR";
+        "RHUMFSHCESB"; // reversed
 
 void update() {
     Serial.println("Checking for updates...");
@@ -272,31 +275,22 @@ int findCharPosition(char character, int start) {
 
 void showWord(char *word, int wordLength) {
     // int wordLength = (sizeof(word) / sizeof(char)) - 1;
-    int lastPos = -1;
-    int startIndex = 0;
+    int pos = 0;
     int pixel[wordLength];
+    bool searchEverywhere = false;
     Serial.print("Trying to find word: ");
     Serial.println(word);
 
     for (int i = 0; i < wordLength; i++) {
-        int pos = findCharPosition(word[i], startIndex);
+        if (searchEverywhere) pos = 0;
+        pos = findCharPosition(word[i], pos);
         if (pos == -1) {
-            return;
+            searchEverywhere = true;
+            continue;
         }
-        if (lastPos + 1 != pos && lastPos != -1) {
-            startIndex = pos - i;
-            i = -1;
-            lastPos = -1;
-            Serial.print("Offsetting position of first char '");
-            Serial.print(word[0]);
-            Serial.print("' to ");
-            Serial.println(startIndex);
-        } else {
-            lastPos = pos;
-            startIndex = pos + 1;
-            pixel[i] = pos;
-        }
+        pixel[i] = pos;
     }
+    fadeAll();
     for (int i = 0; i < wordLength; i++) {
         showLed(pixel[i], 100, 100, 100);
         Serial.print("Displaying char ");
@@ -304,37 +298,30 @@ void showWord(char *word, int wordLength) {
         Serial.print(" at position ");
         Serial.println(pixel[i]);
     }
-
+    FastLED.show();
     Serial.println("Done.");
 }
 
 void setup() {
+    FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
+    FastLED.setBrightness(BRIGHTNESS);
+    fadeAll();
+
     Serial.begin(115200);
     Serial.print("Firmware version: ");
     Serial.println(VERSION);
-    // Connect to WiFi
-    WiFi.begin(ssid, password);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        Serial.print(".");
-    }
+    Serial.println("Connecting to WiFi");
+
+    showWord("WIFI", 4);
+    WiFiManager wifiManager;
+    wifiManager.autoConnect("LetiClock", "ThisIsChildish:D");
     Serial.println("");
     Serial.println("WiFi connected");
+
+    showWord("UPDATE", 6);
     update();
 
-    FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
-    FastLED.setBrightness(BRIGHTNESS);
-
     configTime(MY_TZ, MY_NTP_SERVER);
-
-    fadeAll();
-
-    // showWord("ES", 2);
-    // showWord("IST", 3);
-    // showWord("F3NF", 4);
-    // showWord("ZWANZIG", 7);
-    // showWord("SECHS", 5);
-    // showWord("UHR", 3);
 }
 
 void loop() {
