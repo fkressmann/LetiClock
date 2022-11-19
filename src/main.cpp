@@ -1,31 +1,32 @@
 #include <Arduino.h>
 #include <FastLED.h>
-#include "ESP8266WiFi.h"
+#include <LEDMatrix.h>
+#include <LEDText.h>
+#include <FontMatrise.h>
 #include <time.h>
 #include <WiFiClient.h>
 #include "ESP8266httpUpdate.h"
 #include <DNSServer.h>
-#include <ESP8266WebServer.h>
 #include <WiFiManager.h>
 #include <credentials.h>
 
 #define DEVELOPMENT
 
 
-#define VERSION     "LetiClock-v5"
+#define VERSION     "LetiClock-v6"
 #define LED_PIN     2 //The data pin of the arduino
 #define NUM_LEDS    114 //Numbers of LED
-#define BRIGHTNESS  20 //Brightness of the LEDs
+#define BRIGHTNESS  10 //Brightness of the LEDs
 #define LED_TYPE    WS2812 //The type of the LED stripe
 #define COLOR_ORDER GRB
 
-CRGB leds[NUM_LEDS];
+cLEDMatrix<11, -10, HORIZONTAL_ZIGZAG_MATRIX> ledMatrix;
+cLEDText ScrollingMsg;
 
 // WiFi parameters
 const char *ssid = WIFI_SSID;
 const char *password = WIFI_PSK;
 
-String hours, minutes, seconds;
 int currentSecond, currentMinute, currentHour;
 
 #define MY_NTP_SERVER "pool.ntp.org"
@@ -67,19 +68,13 @@ void update() {
 }
 
 void fadeAll() {
-    for (int i = 0; i < NUM_LEDS; i++) {
-        leds[i].r = 0;
-        leds[i].g = 0;
-        leds[i].b = 0;
-
-    }
-    FastLED.show();
+    FastLED.clear(true);
 }
 
 void showLed(int i, int r, int g, int b) {
-    leds[i].r = r;
-    leds[i].g = g;
-    leds[i].b = b;
+    ledMatrix(i).r = r;
+    ledMatrix(i).g = g;
+    ledMatrix(i).b = b;
 }
 
 void wordES(int r, int g, int b) {
@@ -302,12 +297,26 @@ void showWord(char *word, int wordLength) {
     Serial.println("Done.");
 }
 
-void setup() {
-    FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
-    FastLED.setBrightness(BRIGHTNESS);
+void showText(const String message, int times) {
     fadeAll();
+    String concat = String(EFFECT_SCROLL_LEFT) + "   " + message + "   ";
+    for (int i = 0; i < times; i++){
+        ScrollingMsg.SetText((unsigned char *) concat.c_str(), concat.length());
+        while (ScrollingMsg.UpdateText() != -1) {
+            FastLED.delay(100);
+            yield();
+        }
+    }
+    fadeAll();
+}
 
+void setup() {
     Serial.begin(115200);
+
+    FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4).setCorrection(TypicalLEDStrip);
+    FastLED.setBrightness(BRIGHTNESS);
+    Serial.print("");
+
     Serial.print("Firmware version: ");
     Serial.println(VERSION);
     Serial.println("Connecting to WiFi");
@@ -322,6 +331,13 @@ void setup() {
     update();
 
     configTime(MY_TZ, MY_NTP_SERVER);
+
+    ScrollingMsg.SetFont(MatriseFontData);
+    ScrollingMsg.Init(&ledMatrix, ledMatrix.Width(), ScrollingMsg.FontHeight() + 1, 0, 0);
+    ScrollingMsg.SetTextColrOptions(COLR_RGB | COLR_SINGLE, 0xff, 0x00, 0x00);
+
+    showText("Hallo Rolfo!", 3);
+
 }
 
 void loop() {
