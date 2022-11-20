@@ -8,10 +8,11 @@
 #include "ESP8266httpUpdate.h"
 #include <DNSServer.h>
 #include <WiFiManager.h>
+#include <PubSubClient.h>
 #include <credentials.h>
 
-#define DEVELOPMENT
-
+#define MY_NTP_SERVER "pool.ntp.org"
+#define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 
 #define VERSION     "LetiClock-v6"
 #define LED_PIN     2 //The data pin of the arduino
@@ -20,17 +21,17 @@
 #define LED_TYPE    WS2812 //The type of the LED stripe
 #define COLOR_ORDER GRB
 
+const String prefix = MQTT_PREFIX;
+const char *deviceName = DEVICE_NAME;
+const char *topicMessage = "mes";
+
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+
 cLEDMatrix<11, -10, HORIZONTAL_ZIGZAG_MATRIX> ledMatrix;
 cLEDText ScrollingMsg;
 
-// WiFi parameters
-const char *ssid = WIFI_SSID;
-const char *password = WIFI_PSK;
-
 int currentSecond, currentMinute, currentHour;
-
-#define MY_NTP_SERVER "pool.ntp.org"
-#define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 time_t now;
 tm tm;
 
@@ -64,6 +65,38 @@ void update() {
         case HTTP_UPDATE_OK:
             Serial.println("HTTP_UPDATE_OK");
             break;
+    }
+}
+
+void sendData(String subtopic, const char *data, bool retained) {
+    subtopic = prefix + subtopic;
+    mqttClient.publish(subtopic.c_str(), data, retained);
+}
+
+void sendData(String subtopic, String data, bool retained) {
+    sendData(subtopic, data.c_str(), retained);
+}
+
+void sendData(String subtopic, String data) {
+    sendData(subtopic, data, false);
+}
+
+void reconnectMqtt() {
+    while (!mqttClient.connected()) {
+        Serial.print("Attempting MQTT connection...");
+        if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD)) {
+            Serial.println("connected");
+            //once connected to MQTT broker, subscribe command if any
+            mqttClient.subscribe((prefix + "mes").c_str());
+            sendData("ip", WiFi.localIP().toString(), true);
+            sendData("rssi", String(WiFi.RSSI()), true);
+        } else {
+            Serial.print("failed, rc=");
+            Serial.print(mqttClient.state());
+            Serial.println(" try again in 5 seconds");
+            // Wait 6 seconds before retrying
+            delay(6000);
+        }
     }
 }
 
@@ -269,6 +302,7 @@ int findCharPosition(char character, int start) {
 }
 
 void showWord(char *word, int wordLength) {
+    // ToDo: Update this to show chars at random places cause forming a word in order is unlikely ayways
     // int wordLength = (sizeof(word) / sizeof(char)) - 1;
     int pos = 0;
     int pixel[wordLength];
@@ -298,9 +332,12 @@ void showWord(char *word, int wordLength) {
 }
 
 void showText(const String message, int times) {
+    // ToDo: Make this non-blocking for main loop | or maybe not cause we might need to block the MQTT callback
+
+    // ToDo: Work just with char* s
     fadeAll();
     String concat = String(EFFECT_SCROLL_LEFT) + "   " + message + "   ";
-    for (int i = 0; i < times; i++){
+    for (int i = 0; i < times; i++) {
         ScrollingMsg.SetText((unsigned char *) concat.c_str(), concat.length());
         while (ScrollingMsg.UpdateText() != -1) {
             FastLED.delay(100);
@@ -310,12 +347,28 @@ void showText(const String message, int times) {
     fadeAll();
 }
 
+void mqttCallback(char *topic, byte *payload, unsigned int length) {
+    Serial.println("Received MQTT message: ");
+    Serial.print(topic);
+    Serial.print((char *) payload);
+    Serial.println();
+    char *slashPointer = strrchr(topic, '/');
+
+    if (strcmp(slashPointer + 1, topicMessage) == 0) {
+        char payloadCstr[length + 1];
+        strncpy(payloadCstr, (char *) payload, length);
+        payloadCstr[length] = '\0';
+        String message = String(payloadCstr);
+        showText(message, 1);
+    }
+
+}
+
 void setup() {
     Serial.begin(115200);
 
     FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4).setCorrection(TypicalLEDStrip);
     FastLED.setBrightness(BRIGHTNESS);
-    Serial.print("");
 
     Serial.print("Firmware version: ");
     Serial.println(VERSION);
@@ -330,31 +383,32 @@ void setup() {
     showWord("UPDATE", 6);
     update();
 
+    showWord("MQTT", 4);
+    mqttClient.setServer(MQTT_SERVER, 1883);
+    mqttClient.setCallback(mqttCallback);
+    reconnectMqtt();
+
     configTime(MY_TZ, MY_NTP_SERVER);
 
     ScrollingMsg.SetFont(MatriseFontData);
     ScrollingMsg.Init(&ledMatrix, ledMatrix.Width(), ScrollingMsg.FontHeight() + 1, 0, 0);
     ScrollingMsg.SetTextColrOptions(COLR_RGB | COLR_SINGLE, 0xff, 0x00, 0x00);
 
-    showText("Hallo Rolfo!", 3);
-
 }
 
 void loop() {
+    reconnectMqtt();
+    mqttClient.loop();
     time(&now);                       // read the current time
     localtime_r(&now, &tm);           // update the structure tm with the current time
-    Serial.print("\thour:");
-    Serial.print(tm.tm_hour);         // hours since midnight  0-23
-    Serial.print("\tmin:");
-    Serial.print(tm.tm_min);          // minutes after the hour  0-59
-    Serial.print("\tsec:");
-    Serial.print(tm.tm_sec);          // seconds after the minute  0-61*
-    Serial.println();
 
     currentHour = tm.tm_hour;
     currentMinute = tm.tm_min;
     currentSecond = tm.tm_sec;
 
+    // ToDo: Change LEDs only when time changes, keep coloring of a word identical when not changed
+
+    // ToDo: Define a fixed color set
 
     wordES(color(), color(), color());
     wordIST(color(), color(), color());
@@ -400,9 +454,10 @@ void loop() {
         currentHour += 1;
     }
     if (currentMinute >= 45 && currentMinute < 50) {
-        wordDREI(color(), color(), color());
+        // ToDo: Add dreiviertel Schreibweise
         wordVIERTEL(color(), color(), color());
-        wordNACH(color(), color(), color());
+        wordVOR(color(), color(), color());
+        currentHour++;
     }
     if (currentMinute >= 50 && currentMinute < 55) {
         wordZEHN(color(), color(), color());
@@ -467,13 +522,13 @@ void loop() {
     int b = color();
     switch (minutes) {
         case 4:
-            showLed(113, r, g, b);
-        case 3:
-            showLed(112, r, g, b);
-        case 2:
             showLed(111, r, g, b);
-        case 1:
+        case 3:
             showLed(110, r, g, b);
+        case 2:
+            showLed(112, r, g, b);
+        case 1:
+            showLed(113, r, g, b);
     }
 
     FastLED.show();
