@@ -19,13 +19,12 @@
 #define LDR         A0
 #define BUTTON_L    D1
 #define BUTTON_R    D2
-#define BRIGHTNESS  10 //Brightness of the LEDs
 #define LED_TYPE    WS2812 //The type of the LED stripe
 #define COLOR_ORDER GRB
 
 const String prefix = MQTT_PREFIX;
 const char *deviceName = DEVICE_NAME;
-const char *topicMessage = "mes";
+const char *topicMessage = "message";
 
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
@@ -103,10 +102,6 @@ void reconnectMqtt() {
     }
 }
 
-void fadeAll() {
-    FastLED.clear(true);
-}
-
 void showLed(int i, int r, int g, int b) {
     ledMatrix(i).r = r;
     ledMatrix(i).g = g;
@@ -154,7 +149,6 @@ void wordDREI(int r, int g, int b) {
     showLed(24, r, g, b);
     showLed(25, r, g, b);
 }
-
 
 void wordVIERTEL(int r, int g, int b) {
     showLed(26, r, g, b);
@@ -322,7 +316,7 @@ void showWord(char const *word, int wordLength) {
         }
         pixel[i] = pos;
     }
-    fadeAll();
+    FastLED.clear(true);
     for (int i = 0; i < wordLength; i++) {
         showLed(pixel[i], 100, 100, 100);
         Serial.print("Displaying char ");
@@ -338,7 +332,7 @@ void showText(const String message, int times) {
     // ToDo: Make this non-blocking for main loop | or maybe not cause we might need to block the MQTT callback
 
     // ToDo: Work just with char* s
-    fadeAll();
+    FastLED.clear(true);
     String concat = String(EFFECT_SCROLL_LEFT) + "   " + message + "   ";
     for (int i = 0; i < times; i++) {
         ScrollingMsg.SetText((unsigned char *) concat.c_str(), concat.length());
@@ -347,7 +341,7 @@ void showText(const String message, int times) {
             yield();
         }
     }
-    fadeAll();
+    FastLED.clear(true);
 }
 
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
@@ -498,11 +492,19 @@ void handleClock() {
     }
 }
 
+int readAdc() {
+    int value = analogRead(A0);
+    int brightness = max(min(((double ) value / 4), (double) 255), (double) 1);
+    Serial.print(value);
+    Serial.print(':');
+    Serial.println(brightness);
+    return brightness;
+}
+
 void setup() {
     Serial.begin(115200);
 
     FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4).setCorrection(TypicalLEDStrip);
-    FastLED.setBrightness(BRIGHTNESS);
 
     Serial.print("Firmware version: ");
     Serial.println(VERSION);
@@ -537,8 +539,10 @@ void loop() {
     time(&now);                       // read the current time
     localtime_r(&now, &tm);           // update the structure tm with the current time
     handleClock();
+    int brightness = readAdc();
+    FastLED.setBrightness(brightness);
 
     FastLED.show();
     delay(1000);
-    fadeAll();
+    FastLED.clear(true); // ToDo: Necessary?
 }
