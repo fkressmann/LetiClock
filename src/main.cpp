@@ -15,8 +15,10 @@
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 
 #define VERSION     "LetiClock-v6"
-#define LED_PIN     2 //The data pin of the arduino
-#define NUM_LEDS    114 //Numbers of LED
+#define LED_PIN     D3 //The data pin of the arduino
+#define LDR         A0
+#define BUTTON_L    D1
+#define BUTTON_R    D2
 #define BRIGHTNESS  10 //Brightness of the LEDs
 #define LED_TYPE    WS2812 //The type of the LED stripe
 #define COLOR_ORDER GRB
@@ -84,13 +86,14 @@ void sendData(String subtopic, String data) {
 void reconnectMqtt() {
     while (!mqttClient.connected()) {
         Serial.print("Attempting MQTT connection...");
-        if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD)) {
+        if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, "leticlock/lwt", 0, 0, "", false)) { // ToDo: Check persistent session and mqtt re-delivery in case of committed too late
             Serial.println("connected");
             //once connected to MQTT broker, subscribe command if any
             mqttClient.subscribe((prefix + "mes").c_str());
             sendData("ip", WiFi.localIP().toString(), true);
             sendData("rssi", String(WiFi.RSSI()), true);
         } else {
+            // ToDo: Make this non-blocking
             Serial.print("failed, rc=");
             Serial.print(mqttClient.state());
             Serial.println(" try again in 5 seconds");
@@ -301,7 +304,7 @@ int findCharPosition(char character, int start) {
     return -1;
 }
 
-void showWord(char *word, int wordLength) {
+void showWord(char const *word, int wordLength) {
     // ToDo: Update this to show chars at random places cause forming a word in order is unlikely ayways
     // int wordLength = (sizeof(word) / sizeof(char)) - 1;
     int pos = 0;
@@ -364,44 +367,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
 
 }
 
-void setup() {
-    Serial.begin(115200);
-
-    FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4).setCorrection(TypicalLEDStrip);
-    FastLED.setBrightness(BRIGHTNESS);
-
-    Serial.print("Firmware version: ");
-    Serial.println(VERSION);
-    Serial.println("Connecting to WiFi");
-
-    showWord("WIFI", 4);
-    WiFiManager wifiManager;
-    wifiManager.autoConnect("LetiClock", "ThisIsChildish:D");
-    Serial.println("");
-    Serial.println("WiFi connected");
-
-    showWord("UPDATE", 6);
-    update();
-
-    showWord("MQTT", 4);
-    mqttClient.setServer(MQTT_SERVER, 1883);
-    mqttClient.setCallback(mqttCallback);
-    reconnectMqtt();
-
-    configTime(MY_TZ, MY_NTP_SERVER);
-
-    ScrollingMsg.SetFont(MatriseFontData);
-    ScrollingMsg.Init(&ledMatrix, ledMatrix.Width(), ScrollingMsg.FontHeight() + 1, 0, 0);
-    ScrollingMsg.SetTextColrOptions(COLR_RGB | COLR_SINGLE, 0xff, 0x00, 0x00);
-
-}
-
-void loop() {
-    reconnectMqtt();
-    mqttClient.loop();
-    time(&now);                       // read the current time
-    localtime_r(&now, &tm);           // update the structure tm with the current time
-
+void handleClock() {
     currentHour = tm.tm_hour;
     currentMinute = tm.tm_min;
     currentSecond = tm.tm_sec;
@@ -530,6 +496,47 @@ void loop() {
         case 1:
             showLed(113, r, g, b);
     }
+}
+
+void setup() {
+    Serial.begin(115200);
+
+    FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4).setCorrection(TypicalLEDStrip);
+    FastLED.setBrightness(BRIGHTNESS);
+
+    Serial.print("Firmware version: ");
+    Serial.println(VERSION);
+    Serial.println("Connecting to WiFi");
+
+    showWord("WIFI", 4);
+    WiFiManager wifiManager;
+    wifiManager.autoConnect("LetiClock", "ThisIsChildish:D");
+    Serial.println("");
+    Serial.println("WiFi connected");
+
+    // ToDo: Execute this on regular basis
+    showWord("UPDATE", 6);
+    update();
+
+    showWord("MQTT", 4);
+    mqttClient.setServer(MQTT_SERVER, 1883);
+    mqttClient.setCallback(mqttCallback);
+    reconnectMqtt();
+
+    configTime(MY_TZ, MY_NTP_SERVER);
+
+    ScrollingMsg.SetFont(MatriseFontData);
+    ScrollingMsg.Init(&ledMatrix, ledMatrix.Width(), ScrollingMsg.FontHeight() + 1, 0, 0);
+    ScrollingMsg.SetTextColrOptions(COLR_RGB | COLR_SINGLE, 0xff, 0x00, 0x00);
+
+}
+
+void loop() {
+    reconnectMqtt();
+    mqttClient.loop();
+    time(&now);                       // read the current time
+    localtime_r(&now, &tm);           // update the structure tm with the current time
+    handleClock();
 
     FastLED.show();
     delay(1000);
