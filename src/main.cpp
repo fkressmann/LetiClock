@@ -33,6 +33,7 @@ cLEDMatrix<11, -10, HORIZONTAL_ZIGZAG_MATRIX> ledMatrix;
 cLEDText ScrollingMsg;
 
 int currentSecond, currentMinute, currentHour;
+const double E = 2.71828;
 time_t now;
 tm tm;
 
@@ -494,10 +495,8 @@ void handleClock() {
 
 int readAdc() {
     int value = analogRead(A0);
-    int brightness = max(min(((double ) value / 4), (double) 255), (double) 1);
-    Serial.print(value);
-    Serial.print(':');
-    Serial.println(brightness);
+    // Exponential scaling of 10bit analog input to 8bit LED brightness
+    int brightness = max(5, (int) (pow(E, 0.0072195 * value) * 0.149831));
     return brightness;
 }
 
