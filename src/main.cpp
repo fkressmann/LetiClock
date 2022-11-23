@@ -32,10 +32,41 @@ PubSubClient mqttClient(espClient);
 cLEDMatrix<11, -10, HORIZONTAL_ZIGZAG_MATRIX> ledMatrix;
 cLEDText ScrollingMsg;
 
-int currentSecond, currentMinute, currentHour;
+int currentMinute, currentHour;
+int previousMinute = 100; // Init with some insane value to trigger update on boot
 const double E = 2.71828;
 time_t now;
 tm tm;
+
+struct WORD {
+    int start;
+    int length;
+};
+
+WORD W_ES = {0, 2};
+WORD W_IST = {3, 3};
+WORD W_M_FUENF = {7, 4};
+WORD W_M_ZEHN = {18, 4};
+WORD W_M_ZWANZIG = {11, 7};
+WORD W_DREIVIERTEL = {22, 11};
+WORD W_VIERTEL = {26, 7};
+WORD W_NACH = {38, 4};
+WORD W_VOR = {35, 3};
+WORD W_HALB = {44, 4};
+WORD W_S_ZWOELF = {49, 5};
+WORD W_S_ZWEI = {62, 4};
+WORD W_S_EIN = {61, 3};
+WORD W_S_EINS = {60, 4};
+WORD W_S_SIEBEN = {55, 6};
+WORD W_S_DREI = {67, 4};
+WORD W_S_FUENF = {73, 4};
+WORD W_S_ELF = {85, 3};
+WORD W_S_NEUN = {81, 4};
+WORD W_S_VIER = {77, 4};
+WORD W_S_ACHT = {89, 4};
+WORD W_S_ZEHN = {93, 4};
+WORD W_S_SECHS = {104, 5};
+WORD W_UHR = {99, 3};
 
 WiFiClient client;
 
@@ -50,25 +81,6 @@ const char *matrix =
         "REIVNUENFLE" // reversed
         "WACHTZEHNRS"
         "RHUMFSHCESB"; // reversed
-
-void update() {
-    Serial.println("Checking for updates...");
-    t_httpUpdate_return ret = ESPhttpUpdate.update(client, MQTT_SERVER, 80, "/server.php", VERSION);
-    switch (ret) {
-        case HTTP_UPDATE_FAILED:
-            Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s", ESPhttpUpdate.getLastError(),
-                          ESPhttpUpdate.getLastErrorString().c_str());
-            break;
-
-        case HTTP_UPDATE_NO_UPDATES:
-            Serial.println("HTTP_UPDATE_NO_UPDATES");
-            break;
-
-        case HTTP_UPDATE_OK:
-            Serial.println("HTTP_UPDATE_OK");
-            break;
-    }
-}
 
 void sendData(String subtopic, const char *data, bool retained) {
     subtopic = prefix + subtopic;
@@ -86,10 +98,11 @@ void sendData(String subtopic, String data) {
 void reconnectMqtt() {
     while (!mqttClient.connected()) {
         Serial.print("Attempting MQTT connection...");
-        if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, "leticlock/lwt", 0, 0, "", false)) { // ToDo: Check persistent session and mqtt re-delivery in case of committed too late
+        if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, "leticlock/lwt", 0, 0, "",
+                               false)) { // ToDo: Check persistent session and mqtt re-delivery in case of committed too late
             Serial.println("connected");
             //once connected to MQTT broker, subscribe command if any
-            mqttClient.subscribe((prefix + "mes").c_str());
+            mqttClient.subscribe((prefix + topicMessage).c_str());
             sendData("ip", WiFi.localIP().toString(), true);
             sendData("rssi", String(WiFi.RSSI()), true);
         } else {
@@ -103,186 +116,48 @@ void reconnectMqtt() {
     }
 }
 
-void showLed(int i, int r, int g, int b) {
-    ledMatrix(i).r = r;
-    ledMatrix(i).g = g;
-    ledMatrix(i).b = b;
+uint8 randomColor() {
+    uint8 r = random(0, 21);
+    return min(255, r * 13);
 }
 
-void wordES(int r, int g, int b) {
-    showLed(0, r, g, b);
-    showLed(1, r, g, b);
+void setLed(int i, int color) {
+    ledMatrix(i).setHSV(color, 255, 255);
 }
 
-void wordIST(int r, int g, int b) {
-    showLed(3, r, g, b);
-    showLed(4, r, g, b);
-    showLed(5, r, g, b);
+void clearLed(int i) {
+    ledMatrix(i).setRGB(0, 0, 0);
 }
 
-void wordFUENF(int r, int g, int b) {
-    showLed(7, r, g, b);
-    showLed(8, r, g, b);
-    showLed(9, r, g, b);
-    showLed(10, r, g, b);
+void clearLed(int start, int length) {
+    for (int i = start; i < start + length; i++) {
+        clearLed(i);
+    }
 }
 
-void wordZEHN(int r, int g, int b) {
-    showLed(21, r, g, b);
-    showLed(20, r, g, b);
-    showLed(19, r, g, b);
-    showLed(18, r, g, b);
+void setLed(int start, int length, int color) {
+    for (int i = start; i < start + length; i++) {
+        setLed(i, color);
+    }
 }
 
-void wordZWANZIG(int r, int g, int b) {
-    showLed(17, r, g, b);
-    showLed(16, r, g, b);
-    showLed(15, r, g, b);
-    showLed(14, r, g, b);
-    showLed(13, r, g, b);
-    showLed(12, r, g, b);
-    showLed(11, r, g, b);
+void setWord(WORD word, int color) {
+    for (int i = word.start; i < word.start + word.length; i++) {
+        setLed(i, color);
+    }
 }
 
-void wordDREI(int r, int g, int b) {
-    showLed(22, r, g, b);
-    showLed(23, r, g, b);
-    showLed(24, r, g, b);
-    showLed(25, r, g, b);
+void setWord(WORD word) {
+    int color = randomColor();
+    for (int i = word.start; i < word.start + word.length; i++) {
+        setLed(i, color);
+    }
 }
 
-void wordVIERTEL(int r, int g, int b) {
-    showLed(26, r, g, b);
-    showLed(27, r, g, b);
-    showLed(28, r, g, b);
-    showLed(29, r, g, b);
-    showLed(30, r, g, b);
-    showLed(31, r, g, b);
-    showLed(32, r, g, b);
-}
-
-void wordNACH(int r, int g, int b) {
-    showLed(41, r, g, b);
-    showLed(40, r, g, b);
-    showLed(39, r, g, b);
-    showLed(38, r, g, b);
-}
-
-void wordVOR(int r, int g, int b) {
-    showLed(37, r, g, b);
-    showLed(36, r, g, b);
-    showLed(35, r, g, b);
-}
-
-void wordHALB(int r, int g, int b) {
-    showLed(44, r, g, b);
-    showLed(45, r, g, b);
-    showLed(46, r, g, b);
-    showLed(47, r, g, b);
-}
-
-void wordZWOELF(int r, int g, int b) {
-    showLed(49, r, g, b);
-    showLed(50, r, g, b);
-    showLed(51, r, g, b);
-    showLed(52, r, g, b);
-    showLed(53, r, g, b);
-}
-
-void wordZWEI(int r, int g, int b) {
-    showLed(65, r, g, b);
-    showLed(64, r, g, b);
-    showLed(63, r, g, b);
-    showLed(62, r, g, b);
-}
-
-void wordEIN(int r, int g, int b) {
-    showLed(63, r, g, b);
-    showLed(62, r, g, b);
-    showLed(61, r, g, b);
-}
-
-void wordEINS(int r, int g, int b) {
-    showLed(63, r, g, b);
-    showLed(62, r, g, b);
-    showLed(61, r, g, b);
-    showLed(60, r, g, b);
-}
-
-void wordSIEBEN(int r, int g, int b) {
-    showLed(60, r, g, b);
-    showLed(59, r, g, b);
-    showLed(58, r, g, b);
-    showLed(57, r, g, b);
-    showLed(56, r, g, b);
-    showLed(55, r, g, b);
-}
-
-void wordSTUNDEDREI(int r, int g, int b) {
-    showLed(67, r, g, b);
-    showLed(68, r, g, b);
-    showLed(69, r, g, b);
-    showLed(70, r, g, b);
-
-}
-
-void wordSTUNDEFUENF(int r, int g, int b) {
-    showLed(73, r, g, b);
-    showLed(74, r, g, b);
-    showLed(75, r, g, b);
-    showLed(76, r, g, b);
-}
-
-void wordVIER(int r, int g, int b) {
-    showLed(80, r, g, b);
-    showLed(79, r, g, b);
-    showLed(78, r, g, b);
-    showLed(77, r, g, b);
-}
-
-void wordNEUN(int r, int g, int b) {
-    showLed(84, r, g, b);
-    showLed(83, r, g, b);
-    showLed(82, r, g, b);
-    showLed(81, r, g, b);
-}
-
-void wordELF(int r, int g, int b) {
-    showLed(87, r, g, b);
-    showLed(86, r, g, b);
-    showLed(85, r, g, b);
-}
-
-void wordACHT(int r, int g, int b) {
-    showLed(89, r, g, b);
-    showLed(90, r, g, b);
-    showLed(91, r, g, b);
-    showLed(92, r, g, b);
-}
-
-void wordSTUNDEZEHN(int r, int g, int b) {
-    showLed(93, r, g, b);
-    showLed(94, r, g, b);
-    showLed(95, r, g, b);
-    showLed(96, r, g, b);
-}
-
-void wordSECHS(int r, int g, int b) {
-    showLed(108, r, g, b);
-    showLed(107, r, g, b);
-    showLed(106, r, g, b);
-    showLed(105, r, g, b);
-    showLed(104, r, g, b);
-}
-
-void wordUHR(int r, int g, int b) {
-    showLed(101, r, g, b);
-    showLed(100, r, g, b);
-    showLed(99, r, g, b);
-}
-
-int color() {
-    return random(0, 255);
+void clearWord(WORD word) {
+    for (int i = word.start; i < word.start + word.length; i++) {
+        clearLed(i);
+    }
 }
 
 int findCharPosition(char character, int start) {
@@ -319,7 +194,7 @@ void showWord(char const *word, int wordLength) {
     }
     FastLED.clear(true);
     for (int i = 0; i < wordLength; i++) {
-        showLed(pixel[i], 100, 100, 100);
+        setLed(pixel[i], 132);
         Serial.print("Displaying char ");
         Serial.print(word[i]);
         Serial.print(" at position ");
@@ -342,6 +217,7 @@ void showText(const String message, int times) {
             yield();
         }
     }
+    previousMinute = 100; // Fill with crap data to trigger clock rendering after message finished
     FastLED.clear(true);
 }
 
@@ -362,135 +238,184 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
 
 }
 
+void handleMinutes() {
+    if (currentMinute != previousMinute) {
+        setWord(W_ES);
+        setWord(W_IST);
+        int minutes = currentMinute % 5;
+        int color = randomColor();
+        switch (minutes) {
+            case 0:
+                clearLed(110, 4);
+                break;
+            case 4:
+                setLed(111, color);
+            case 3:
+                setLed(110, color);
+            case 2:
+                setLed(112, color);
+            case 1:
+                setLed(113, color);
+        }
+
+        if (currentMinute >= 0 && currentMinute < 5) {
+            clearWord(W_M_FUENF);
+            clearWord(W_VOR);
+            setWord(W_UHR);
+            return;
+        }
+        if (currentMinute >= 5 && currentMinute < 10) {
+            clearWord(W_UHR);
+            setWord(W_M_FUENF);
+            setWord(W_NACH);
+            return;
+        }
+        if (currentMinute >= 10 && currentMinute < 15) {
+            clearWord(W_M_FUENF);
+            clearWord(W_NACH);
+            setWord(W_M_ZEHN);
+            setWord(W_NACH);
+            return;
+        }
+        if (currentMinute >= 15 && currentMinute < 20) {
+            clearWord(W_M_ZEHN);
+            setWord(W_VIERTEL);
+            setWord(W_NACH);
+            return;
+        }
+        if (currentMinute >= 20 && currentMinute < 25) {
+            clearWord(W_VIERTEL);
+            setWord(W_M_ZWANZIG);
+            setWord(W_NACH);
+            return;
+        }
+        if (currentMinute >= 25 && currentMinute < 30) {
+            clearWord(W_M_ZWANZIG);
+            clearWord(W_NACH);
+            setWord(W_M_FUENF);
+            setWord(W_VOR);
+            setWord(W_HALB);
+            return;
+        }
+        if (currentMinute >= 30 && currentMinute < 35) {
+            clearWord(W_M_FUENF);
+            clearWord(W_VOR);
+            setWord(W_HALB);
+            return;
+        }
+        if (currentMinute >= 35 && currentMinute < 40) {
+            setWord(W_M_FUENF);
+            setWord(W_NACH);
+            setWord(W_HALB);
+            return;
+        }
+        if (currentMinute >= 40 && currentMinute < 45) {
+            clearWord(W_M_FUENF);
+            clearWord(W_NACH);
+            clearWord(W_HALB);
+            setWord(W_M_ZWANZIG);
+            setWord(W_VOR);
+            return;
+        }
+        if (currentMinute >= 45 && currentMinute < 50) {
+            clearWord(W_M_ZWANZIG);
+            clearWord(W_VOR);
+            if (random(0, 2) == 0) {
+                setWord(W_VIERTEL);
+                setWord(W_VOR);
+            } else {
+                setWord(W_DREIVIERTEL);
+            }
+            return;
+        }
+        if (currentMinute >= 50 && currentMinute < 55) {
+            clearWord(W_M_ZWANZIG);
+            clearWord(W_VOR);
+            clearWord(W_DREIVIERTEL);
+            setWord(W_M_ZEHN);
+            setWord(W_VOR);
+            return;
+        }
+        if (currentMinute >= 55) {
+            clearWord(W_M_ZEHN);
+            setWord(W_M_FUENF);
+            setWord(W_VOR);
+            return;
+        }
+    }
+}
+
+void handleHours() {
+    if (currentMinute != previousMinute) {
+        previousMinute = currentMinute;
+        switch (currentHour) {
+            case 1:
+                clearWord(W_S_ZWOELF);
+                if (currentMinute >= 0 && currentMinute < 5) {
+                    setWord(W_S_EIN);
+                } else {
+                    setWord(W_S_EINS);
+                }
+                break;
+            case 2:
+                clearWord(W_S_EINS);
+                setWord(W_S_ZWEI);
+                break;
+            case 3:
+                clearWord(W_S_ZWEI);
+                setWord(W_S_DREI);
+                break;
+            case 4:
+                clearWord(W_S_DREI);
+                setWord(W_S_VIER);
+                break;
+            case 5:
+                clearWord(W_S_VIER);
+                setWord(W_S_FUENF);
+                break;
+            case 6:
+                clearWord(W_S_FUENF);
+                setWord(W_S_SECHS);
+                break;
+            case 7:
+                clearWord(W_S_SECHS);
+                setWord(W_S_SIEBEN);
+                break;
+            case 8:
+                clearWord(W_S_SIEBEN);
+                setWord(W_S_ACHT);
+                break;
+            case 9:
+                clearWord(W_S_ACHT);
+                setWord(W_S_NEUN);
+                break;
+            case 10:
+                clearWord(W_S_NEUN);
+                setWord(W_S_ZEHN);
+                break;
+            case 11:
+                clearWord(W_S_ZEHN);
+                setWord(W_S_ELF);
+                break;
+            case 12:
+            case 0:
+                clearWord(W_S_ELF);
+                setWord(W_S_ZWOELF);
+                break;
+        }
+    }
+}
+
 void handleClock() {
     currentHour = tm.tm_hour;
     currentMinute = tm.tm_min;
-    currentSecond = tm.tm_sec;
 
-    // ToDo: Change LEDs only when time changes, keep coloring of a word identical when not changed
-
-    // ToDo: Define a fixed color set
-
-    wordES(color(), color(), color());
-    wordIST(color(), color(), color());
-
-    if (currentMinute >= 0 && currentMinute < 5) {
-        wordUHR(color(), color(), color());
-    }
-    if (currentMinute >= 5 && currentMinute < 10) {
-        wordFUENF(color(), color(), color());
-        wordNACH(color(), color(), color());
-    }
-    if (currentMinute >= 10 && currentMinute < 15) {
-        wordZEHN(color(), color(), color());
-        wordNACH(color(), color(), color());
-    }
-    if (currentMinute >= 15 && currentMinute < 20) {
-        wordVIERTEL(color(), color(), color());
-        wordNACH(color(), color(), color());
-    }
-    if (currentMinute >= 20 && currentMinute < 25) {
-        wordZWANZIG(color(), color(), color());
-        wordNACH(color(), color(), color());
-    }
-    if (currentMinute >= 25 && currentMinute < 30) {
-        wordFUENF(color(), color(), color());
-        wordVOR(color(), color(), color());
-        wordHALB(color(), color(), color());
-        currentHour += 1;
-    }
-    if (currentMinute >= 30 && currentMinute < 35) {
-        wordHALB(color(), color(), color());
-        currentHour += 1;
-    }
-    if (currentMinute >= 35 && currentMinute < 40) {
-        wordFUENF(color(), color(), color());
-        wordNACH(color(), color(), color());
-        wordHALB(color(), color(), color());
-        currentHour += 1;
-    }
-    if (currentMinute >= 40 && currentMinute < 45) {
-        wordZWANZIG(color(), color(), color());
-        wordVOR(color(), color(), color());
-        currentHour += 1;
-    }
-    if (currentMinute >= 45 && currentMinute < 50) {
-        // ToDo: Add dreiviertel Schreibweise
-        wordVIERTEL(color(), color(), color());
-        wordVOR(color(), color(), color());
-        currentHour++;
-    }
-    if (currentMinute >= 50 && currentMinute < 55) {
-        wordZEHN(color(), color(), color());
-        wordVOR(color(), color(), color());
-        currentHour += 1;
-    }
-    if (currentMinute >= 55) {
-        wordFUENF(color(), color(), color());
-        wordVOR(color(), color(), color());
-        currentHour += 1;
-    }
-
+    if (currentMinute >= 25) currentHour++;
     if (currentHour > 12) currentHour = currentHour - 12;
 
-    switch (currentHour) {
-        case 1:
-            if (currentMinute >= 0 && currentMinute < 5) {
-                wordEIN(color(), color(), color());
-            } else {
-                wordEINS(color(), color(), color());
-            }
-            break;
-        case 2:
-            wordZWEI(color(), color(), color());
-            break;
-        case 3:
-            wordSTUNDEDREI(color(), color(), color());
-            break;
-        case 4:
-            wordVIER(color(), color(), color());
-            break;
-        case 5:
-            wordSTUNDEFUENF(color(), color(), color());
-            break;
-        case 6:
-            wordSECHS(color(), color(), color());
-            break;
-        case 7:
-            wordSIEBEN(color(), color(), color());
-            break;
-        case 8:
-            wordACHT(color(), color(), color());
-            break;
-        case 9:
-            wordNEUN(color(), color(), color());
-            break;
-        case 10:
-            wordSTUNDEZEHN(color(), color(), color());
-            break;
-        case 11:
-            wordELF(color(), color(), color());
-            break;
-        case 12:
-        case 0:
-            wordZWOELF(color(), color(), color());
-            break;
-    }
+    handleMinutes();
+    handleHours();
 
-    int minutes = currentMinute % 5;
-    int r = color();
-    int g = color();
-    int b = color();
-    switch (minutes) {
-        case 4:
-            showLed(111, r, g, b);
-        case 3:
-            showLed(110, r, g, b);
-        case 2:
-            showLed(112, r, g, b);
-        case 1:
-            showLed(113, r, g, b);
-    }
 }
 
 int readAdc() {
@@ -498,6 +423,25 @@ int readAdc() {
     // Exponential scaling of 10bit analog input to 8bit LED brightness
     int brightness = max(5, (int) (pow(E, 0.0072195 * value) * 0.149831));
     return brightness;
+}
+
+void update() {
+    Serial.println("Checking for updates...");
+    t_httpUpdate_return ret = ESPhttpUpdate.update(client, MQTT_SERVER, 80, "/server.php", VERSION);
+    switch (ret) {
+        case HTTP_UPDATE_FAILED:
+            Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s", ESPhttpUpdate.getLastError(),
+                          ESPhttpUpdate.getLastErrorString().c_str());
+            break;
+
+        case HTTP_UPDATE_NO_UPDATES:
+            Serial.println("HTTP_UPDATE_NO_UPDATES");
+            break;
+
+        case HTTP_UPDATE_OK:
+            Serial.println("HTTP_UPDATE_OK");
+            break;
+    }
 }
 
 void setup() {
@@ -530,6 +474,7 @@ void setup() {
     ScrollingMsg.Init(&ledMatrix, ledMatrix.Width(), ScrollingMsg.FontHeight() + 1, 0, 0);
     ScrollingMsg.SetTextColrOptions(COLR_RGB | COLR_SINGLE, 0xff, 0x00, 0x00);
 
+    FastLED.clear(true);
 }
 
 void loop() {
@@ -541,7 +486,7 @@ void loop() {
     int brightness = readAdc();
     FastLED.setBrightness(brightness);
 
-    FastLED.show();
-    delay(1000);
-    FastLED.clear(true); // ToDo: Necessary?
+    FastLED.delay(1000);
+//    delay(1000);
+//    FastLED.clear(true); // ToDo: Necessary?
 }
