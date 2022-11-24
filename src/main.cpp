@@ -88,32 +88,7 @@ void sendData(String subtopic, const char *data, bool retained) {
 }
 
 void sendData(String subtopic, String data, bool retained) {
-    sendData(subtopic, data.c_str(), retained);
-}
-
-void sendData(String subtopic, String data) {
-    sendData(subtopic, data, false);
-}
-
-void reconnectMqtt() {
-    while (!mqttClient.connected()) {
-        Serial.print("Attempting MQTT connection...");
-        if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, "leticlock/lwt", 0, 0, "",
-                               false)) { // ToDo: Check persistent session and mqtt re-delivery in case of committed too late
-            Serial.println("connected");
-            //once connected to MQTT broker, subscribe command if any
-            mqttClient.subscribe((prefix + topicMessage).c_str());
-            sendData("ip", WiFi.localIP().toString(), true);
-            sendData("rssi", String(WiFi.RSSI()), true);
-        } else {
-            // ToDo: Make this non-blocking
-            Serial.print("failed, rc=");
-            Serial.print(mqttClient.state());
-            Serial.println(" try again in 5 seconds");
-            // Wait 6 seconds before retrying
-            delay(6000);
-        }
-    }
+    sendData(subtopic, (String(asctime(&tm)) + data).c_str(), retained);
 }
 
 uint8 randomColor() {
@@ -222,10 +197,6 @@ void showText(const String message, int times) {
 }
 
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
-    Serial.println("Received MQTT message: ");
-    Serial.print(topic);
-    Serial.print((char *) payload);
-    Serial.println();
     char *slashPointer = strrchr(topic, '/');
 
     if (strcmp(slashPointer + 1, topicMessage) == 0) {
@@ -425,23 +396,42 @@ int readAdc() {
     return brightness;
 }
 
+void reconnectMqtt() {
+    while (!mqttClient.connected()) {
+        showWord("MQTT", 4);
+        if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, "leticlock/lwt", 0, 0, "",
+                               false)) { // ToDo: Check persistent session and mqtt re-delivery in case of committed too late
+            Serial.println("connected");
+            //once connected to MQTT broker, subscribe command if any
+            mqttClient.subscribe((prefix + topicMessage).c_str());
+            sendData("ip", WiFi.localIP().toString(), true);
+            sendData("rssi", String(WiFi.RSSI()), true);
+        }
+        FastLED.clear(true);
+    }
+}
+
+void cbUpdateStarted() {
+    showWord("UPDATE", 6);
+}
+
 void update() {
-    Serial.println("Checking for updates...");
     t_httpUpdate_return ret = ESPhttpUpdate.update(client, MQTT_SERVER, 80, "/server.php", VERSION);
     switch (ret) {
         case HTTP_UPDATE_FAILED:
-            Serial.printf("HTTP_UPDATE_FAILD Error (%d): %s", ESPhttpUpdate.getLastError(),
-                          ESPhttpUpdate.getLastErrorString().c_str());
+            sendData("log", ESPhttpUpdate.getLastErrorString(), true);
             break;
 
         case HTTP_UPDATE_NO_UPDATES:
-            Serial.println("HTTP_UPDATE_NO_UPDATES");
+            sendData("log", "HTTP_UPDATE_NO_UPDATES", true);
             break;
 
         case HTTP_UPDATE_OK:
-            Serial.println("HTTP_UPDATE_OK");
+            showWord("UPDATE", 6);
+            sendData("log", "HTTP_UPDATE_OK", true);
             break;
     }
+    FastLED.clear(true);
 }
 
 void setup() {
@@ -459,11 +449,9 @@ void setup() {
     Serial.println("");
     Serial.println("WiFi connected");
 
-    // ToDo: Execute this on regular basis
-    showWord("UPDATE", 6);
+    ESPhttpUpdate.onStart(cbUpdateStarted);
     update();
 
-    showWord("MQTT", 4);
     mqttClient.setServer(MQTT_SERVER, 1883);
     mqttClient.setCallback(mqttCallback);
     reconnectMqtt();
@@ -485,8 +473,7 @@ void loop() {
     handleClock();
     int brightness = readAdc();
     FastLED.setBrightness(brightness);
+    if (millis() % 1000 < 0) update();
 
     FastLED.delay(1000);
-//    delay(1000);
-//    FastLED.clear(true); // ToDo: Necessary?
 }
