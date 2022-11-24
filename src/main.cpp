@@ -403,7 +403,7 @@ int readAdc() {
 }
 
 void reconnectMqtt() {
-    while (!mqttClient.connected()) {
+    if (!mqttClient.connected()) {
         if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, "leticlock/lwt", 0, 0, "offline",
                                false)) {
             //once connected to MQTT broker, subscribe command if any
@@ -480,7 +480,7 @@ void setup() {
     ESPhttpUpdate.onStart(callbackUpdateStarted);
     update();
 
-    mqttClient.setServer(MQTT_SERVER, 1883);
+    mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
     mqttClient.setCallback(mqttCallback);
     reconnectMqtt();
 
@@ -498,7 +498,7 @@ void loop() {
     handleClock();
     int brightness = readAdc();
     FastLED.setBrightness(brightness);
-    if (millis() % 1000 == 0) update();
+    if (millis() % 1000 < 2) update();
     FastLED.delay(1000);
     if (mqttMessage.available) showText();
 }
