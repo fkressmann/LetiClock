@@ -25,6 +25,12 @@
 const String prefix = MQTT_PREFIX;
 const char *deviceName = DEVICE_NAME;
 const char *topicMessage = "message";
+void reconnectMqtt();
+struct {
+    bool available = false;
+    int length;
+    char buffer[256];
+} mqttMessage;
 
 WiFiClient espClient;
 PubSubClient mqttClient(espClient);
@@ -37,6 +43,7 @@ int previousMinute = 100; // Init with some insane value to trigger update on bo
 const double E = 2.71828;
 time_t now;
 tm tm;
+bool d1Triggered, d2Triggered = false;
 
 struct WORD {
     int start;
@@ -179,32 +186,39 @@ void showWord(char const *word, int wordLength) {
     Serial.println("Done.");
 }
 
-void showText(const String message, int times) {
-    // ToDo: Make this non-blocking for main loop | or maybe not cause we might need to block the MQTT callback
-
-    // ToDo: Work just with char* s
+void showText() {
+    // Disconnect MQTT to
+    // 1. not time-out cause message can run for long time
+    // 2. not receive other messages while this is displayed Broker will cache QOS1 for us
+    mqttClient.disconnect();
     FastLED.clear(true);
-    String concat = String(EFFECT_SCROLL_LEFT) + "   " + message + "   ";
-    for (int i = 0; i < times; i++) {
-        ScrollingMsg.SetText((unsigned char *) concat.c_str(), concat.length());
-        while (ScrollingMsg.UpdateText() != -1) {
+    while (!d1Triggered && !d2Triggered) {
+        ScrollingMsg.SetText((unsigned char *)mqttMessage.buffer, mqttMessage.length);
+        while ((!d1Triggered && !d2Triggered) && ScrollingMsg.UpdateText() != -1) {
             FastLED.delay(100);
-            yield();
         }
     }
+    d1Triggered = false;
+    d2Triggered = false;
+    mqttMessage.available = false;
     previousMinute = 100; // Fill with crap data to trigger clock rendering after message finished
     FastLED.clear(true);
 }
 
+void prepareMessage(char *payload, unsigned int length) {
+    mqttMessage.buffer[0] = EFFECT_SCROLL_LEFT[0];
+    mqttMessage.buffer[1] = ' ';
+    strncpy(mqttMessage.buffer + 2, payload, length);
+    mqttMessage.buffer[length+2] = ' ';
+    mqttMessage.buffer[length+3] = '\0';
+    mqttMessage.available = true;
+    mqttMessage.length = length + 3;
+}
+
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
     char *slashPointer = strrchr(topic, '/');
-
     if (strcmp(slashPointer + 1, topicMessage) == 0) {
-        char payloadCstr[length + 1];
-        strncpy(payloadCstr, (char *) payload, length);
-        payloadCstr[length] = '\0';
-        String message = String(payloadCstr);
-        showText(message, 1);
+        prepareMessage((char *) payload, length);
     }
 
 }
@@ -295,6 +309,7 @@ void handleMinutes() {
                 setWord(W_VIERTEL);
                 setWord(W_VOR);
             } else {
+                clearWord(W_VOR);
                 setWord(W_DREIVIERTEL);
             }
             return;
@@ -398,14 +413,15 @@ int readAdc() {
 
 void reconnectMqtt() {
     while (!mqttClient.connected()) {
-        showWord("MQTT", 4);
-        if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, "leticlock/lwt", 0, 0, "",
-                               false)) { // ToDo: Check persistent session and mqtt re-delivery in case of committed too late
-            Serial.println("connected");
+        if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, "leticlock/lwt", 0, 0, "offline",
+                               false)) {
             //once connected to MQTT broker, subscribe command if any
-            mqttClient.subscribe((prefix + topicMessage).c_str());
+            mqttClient.subscribe((prefix + topicMessage).c_str(), 1);
             sendData("ip", WiFi.localIP().toString(), true);
             sendData("rssi", String(WiFi.RSSI()), true);
+        } else {
+            showWord("MQTT", 4);
+            FastLED.delay(1000);
         }
         FastLED.clear(true);
     }
@@ -431,11 +447,28 @@ void update() {
             sendData("log", "HTTP_UPDATE_OK", true);
             break;
     }
-    FastLED.clear(true);
+}
+
+void IRAM_ATTR isrD1() {
+    d1Triggered = true;
+}
+
+void IRAM_ATTR isrD2() {
+    d2Triggered = true;
+}
+
+void updateTime() {
+    time(&now);                       // read the current time
+    localtime_r(&now, &tm);           // update the structure tm with the current time
 }
 
 void setup() {
     Serial.begin(115200);
+    pinMode(D1, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(D1), isrD1, FALLING);
+
+    pinMode(D2, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(D2), isrD2, FALLING);
 
     FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4).setCorrection(TypicalLEDStrip);
 
@@ -449,14 +482,16 @@ void setup() {
     Serial.println("");
     Serial.println("WiFi connected");
 
+    configTime(MY_TZ, MY_NTP_SERVER);
+    updateTime();
+    delay(100);
+
     ESPhttpUpdate.onStart(cbUpdateStarted);
     update();
 
     mqttClient.setServer(MQTT_SERVER, 1883);
     mqttClient.setCallback(mqttCallback);
     reconnectMqtt();
-
-    configTime(MY_TZ, MY_NTP_SERVER);
 
     ScrollingMsg.SetFont(MatriseFontData);
     ScrollingMsg.Init(&ledMatrix, ledMatrix.Width(), ScrollingMsg.FontHeight() + 1, 0, 0);
@@ -468,12 +503,11 @@ void setup() {
 void loop() {
     reconnectMqtt();
     mqttClient.loop();
-    time(&now);                       // read the current time
-    localtime_r(&now, &tm);           // update the structure tm with the current time
+    updateTime();
     handleClock();
     int brightness = readAdc();
     FastLED.setBrightness(brightness);
-    if (millis() % 1000 < 0) update();
-
+    if (millis() % 1000 == 0) update();
     FastLED.delay(1000);
+    if (mqttMessage.available) showText();
 }
