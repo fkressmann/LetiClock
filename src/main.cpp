@@ -177,17 +177,19 @@ void showWord(char const *word, int wordLength) {
     FastLED.show();
 }
 
-void showText() {
+void showText(bool infinite) {
     // Disconnect MQTT to
     // 1. not time-out cause message can run for long time
     // 2. not receive other messages while this is displayed Broker will cache QOS1 for us
     mqttClient.disconnect();
     FastLED.clear(true);
-    while (!d1Triggered && !d2Triggered) {
+    bool run = true;
+    while (!d1Triggered && !d2Triggered && run) {
         ScrollingMsg.SetText((unsigned char *)mqttMessage.buffer, mqttMessage.length);
         while ((!d1Triggered && !d2Triggered) && ScrollingMsg.UpdateText() != -1) {
             FastLED.delay(100);
         }
+        if (!infinite) run  = false;
     }
     d1Triggered = false;
     d2Triggered = false;
@@ -488,6 +490,9 @@ void setup() {
     ScrollingMsg.Init(&ledMatrix, ledMatrix.Width(), ScrollingMsg.FontHeight() + 1, 0, 0);
     ScrollingMsg.SetTextColrOptions(COLR_RGB | COLR_SINGLE, 0xff, 0x00, 0x00);
 
+    prepareMessage(VERSION, sizeof(VERSION));
+    showText(false);
+
     FastLED.clear(true);
 }
 
@@ -500,5 +505,5 @@ void loop() {
     FastLED.setBrightness(brightness);
     if (millis() % 1000 < 2) update();
     FastLED.delay(1000);
-    if (mqttMessage.available) showText();
+    if (mqttMessage.available) showText(true);
 }
