@@ -14,7 +14,7 @@
 #define MY_NTP_SERVER "pool.ntp.org"
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 
-#define VERSION     "LetiClock-v6"
+#define VERSION     "LetiClock-v7"
 #define LED_PIN     D3 //The data pin of the arduino
 #define LDR         A0
 #define BUTTON_L    D1
@@ -99,8 +99,7 @@ void sendData(String subtopic, String data, bool retained) {
 }
 
 uint8 randomColor() {
-    uint8 r = random(0, 21);
-    return min(255, r * 13);
+    return random(0, 256);
 }
 
 void setLed(int i, int color) {
@@ -157,13 +156,9 @@ int findCharPosition(char character, int start) {
 }
 
 void showWord(char const *word, int wordLength) {
-    // ToDo: Update this to show chars at random places cause forming a word in order is unlikely ayways
-    // int wordLength = (sizeof(word) / sizeof(char)) - 1;
     int pos = 0;
     int pixel[wordLength];
     bool searchEverywhere = false;
-    Serial.print("Trying to find word: ");
-    Serial.println(word);
 
     for (int i = 0; i < wordLength; i++) {
         if (searchEverywhere) pos = 0;
@@ -175,15 +170,11 @@ void showWord(char const *word, int wordLength) {
         pixel[i] = pos;
     }
     FastLED.clear(true);
+    int color = randomColor();
     for (int i = 0; i < wordLength; i++) {
-        setLed(pixel[i], 132);
-        Serial.print("Displaying char ");
-        Serial.print(word[i]);
-        Serial.print(" at position ");
-        Serial.println(pixel[i]);
+        setLed(pixel[i], color);
     }
     FastLED.show();
-    Serial.println("Done.");
 }
 
 void showText() {
@@ -427,7 +418,7 @@ void reconnectMqtt() {
     }
 }
 
-void cbUpdateStarted() {
+void callbackUpdateStarted() {
     showWord("UPDATE", 6);
 }
 
@@ -486,7 +477,7 @@ void setup() {
     updateTime();
     delay(100);
 
-    ESPhttpUpdate.onStart(cbUpdateStarted);
+    ESPhttpUpdate.onStart(callbackUpdateStarted);
     update();
 
     mqttClient.setServer(MQTT_SERVER, 1883);
