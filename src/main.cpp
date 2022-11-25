@@ -331,6 +331,7 @@ void handleHours() {
             case 1:
                 clearWord(W_S_ZWOELF);
                 if (currentMinute >= 0 && currentMinute < 5) {
+                    clearWord(W_S_EINS);
                     setWord(W_S_EIN);
                 } else {
                     setWord(W_S_EINS);
