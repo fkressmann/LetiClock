@@ -401,7 +401,7 @@ void handleClock() {
 int readAdc() {
     int value = analogRead(A0);
     // Exponential scaling of 10bit analog input to 8bit LED brightness
-    int brightness = max(5, (int) (pow(E, 0.0072195 * value) * 0.149831));
+    int brightness = max(2, (int) (pow(E, 0.0072195 * value) * 0.149831));
     return brightness;
 }
 
@@ -416,6 +416,7 @@ void reconnectMqtt() {
         } else {
             showWord("MQTT", 4);
             FastLED.delay(1000);
+            previousMinute = 100; // Fake this again to refresh screen afterwards
         }
         FastLED.clear(true);
     }
@@ -498,13 +499,13 @@ void setup() {
 }
 
 void loop() {
-    reconnectMqtt();
-    mqttClient.loop();
     updateTime();
     handleClock();
     int brightness = readAdc();
     FastLED.setBrightness(brightness);
+    reconnectMqtt();
+    mqttClient.loop();
+    if (mqttMessage.available) showText(true);
     if (millis() % 1000 < 2) update();
     FastLED.delay(1000);
-    if (mqttMessage.available) showText(true);
 }
