@@ -79,7 +79,8 @@ function doesFirmwareHashMatch($xESPsketchmd, $localBinary)
  */
 function isNewerVersionAvailable($versionFromDb, $versionFromHeaders)
 {
-    $b = $versionFromDb > $versionFromHeaders;
+
+    $b = ((int) substr($versionFromDb, 11)) > ((int) substr($versionFromHeaders, 11));
     return $b;
 }
 
