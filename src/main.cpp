@@ -14,7 +14,7 @@
 #define MY_NTP_SERVER "pool.ntp.org"
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 
-#define VERSION     "LetiClock-v7"
+#define VERSION     "LetiClock-v9"
 #define LED_PIN     D3 //The data pin of the arduino
 #define LDR         A0
 #define BUTTON_L    D1
@@ -32,7 +32,7 @@ struct {
     char buffer[256];
 } mqttMessage;
 
-WiFiClient espClient;
+WiFiClientSecure espClient;
 PubSubClient mqttClient(espClient);
 
 cLEDMatrix<11, -10, HORIZONTAL_ZIGZAG_MATRIX> ledMatrix;
@@ -74,8 +74,6 @@ WORD W_S_ACHT = {89, 4};
 WORD W_S_ZEHN = {93, 4};
 WORD W_S_SECHS = {104, 5};
 WORD W_UHR = {99, 3};
-
-WiFiClient client;
 
 const char *matrix =
         "ESKISTLF3NF"
@@ -427,7 +425,7 @@ void callbackUpdateStarted() {
 }
 
 void update() {
-    t_httpUpdate_return ret = ESPhttpUpdate.update(client, MQTT_SERVER, 80, "/server.php", VERSION);
+    t_httpUpdate_return ret = ESPhttpUpdate.update(espClient, MQTT_SERVER, 443, "/server.php", VERSION);
     switch (ret) {
         case HTTP_UPDATE_FAILED:
             Serial.println(ESPhttpUpdate.getLastErrorString());
@@ -475,6 +473,7 @@ void setup() {
     wifiManager.autoConnect("LetiClock", "ThisIsChildish:D");
     Serial.println("");
     Serial.println("WiFi connected");
+    espClient.setFingerprint(SSL_FINGERPRINT);
 
     configTime(MY_TZ, MY_NTP_SERVER);
     updateTime();
