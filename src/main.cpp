@@ -407,6 +407,7 @@ int readAdc() {
 
 void reconnectMqtt() {
     if (!mqttClient.connected()) {
+        showWord("MQTT", 4);
         if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, "leticlock/lwt", 0, 0, "offline",
                                false)) {
             //once connected to MQTT broker, subscribe command if any
@@ -414,10 +415,9 @@ void reconnectMqtt() {
             sendData("ip", WiFi.localIP().toString(), true);
             sendData("rssi", String(WiFi.RSSI()), true);
         } else {
-            showWord("MQTT", 4);
             FastLED.delay(1000);
-            previousMinute = 100; // Fake this again to refresh screen afterwards
         }
+        previousMinute = 100; // Fake this again to refresh screen afterwards
         FastLED.clear(true);
     }
 }
@@ -430,16 +430,15 @@ void update() {
     t_httpUpdate_return ret = ESPhttpUpdate.update(client, MQTT_SERVER, 80, "/server.php", VERSION);
     switch (ret) {
         case HTTP_UPDATE_FAILED:
-            sendData("log", ESPhttpUpdate.getLastErrorString(), true);
+            Serial.println(ESPhttpUpdate.getLastErrorString());
             break;
 
         case HTTP_UPDATE_NO_UPDATES:
-            sendData("log", "HTTP_UPDATE_NO_UPDATES", true);
+            Serial.println("HTTP_UPDATE_NO_UPDATES");
             break;
 
         case HTTP_UPDATE_OK:
-            showWord("UPDATE", 6);
-            sendData("log", "HTTP_UPDATE_OK", true);
+            Serial.println("HTTP_UPDATE_OK");
             break;
     }
 }
@@ -503,9 +502,9 @@ void loop() {
     handleClock();
     int brightness = readAdc();
     FastLED.setBrightness(brightness);
+    if (mqttMessage.available) showText(true);
     reconnectMqtt();
     mqttClient.loop();
-    if (mqttMessage.available) showText(true);
     if (millis() % 1000 < 2) update();
     FastLED.delay(1000);
 }
