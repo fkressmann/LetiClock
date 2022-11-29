@@ -13,7 +13,7 @@
 #define MY_NTP_SERVER "pool.ntp.org"
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 
-#define VERSION     "LetiClock-v10"
+#define VERSION     "LetiClock-v11"
 #define LED_PIN     D3 //The data pin of the arduino
 #define LDR         A0
 #define BUTTON_L    D1
@@ -213,6 +213,8 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     char *slashPointer = strrchr(topic, '/');
     if (strcmp(slashPointer + 1, topicMessage) == 0) {
         prepareMessage((char *) payload, length);
+    } else {
+        sendData("ack", ": pong", false);
     }
 }
 
@@ -299,6 +301,7 @@ void handleMinutes() {
             clearWord(W_M_ZWANZIG);
             clearWord(W_VOR);
             if (random(0, 2) == 0) {
+                clearWord(W_DREIVIERTEL);
                 setWord(W_VIERTEL);
                 setWord(W_VOR);
             } else {
@@ -405,7 +408,7 @@ void reconnectMqtt() {
                                false)) {
             //once connected to MQTT broker, subscribe command if any
             mqttClient.subscribe((prefix + topicMessage).c_str(), 1);
-            sendData("log", ": mqtt connected", true);
+            sendData("log", ": "  + String(VERSION) + " connected", true);
         } else {
             FastLED.delay(1000);
         }
