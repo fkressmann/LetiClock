@@ -4,7 +4,6 @@
 #include <LEDText.h>
 #include <FontMatrise.h>
 #include <time.h>
-#include <WiFiClient.h>
 #include "ESP8266httpUpdate.h"
 #include <DNSServer.h>
 #include <WiFiManager.h>
@@ -14,7 +13,7 @@
 #define MY_NTP_SERVER "pool.ntp.org"
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 
-#define VERSION     "LetiClock-v9"
+#define VERSION     "LetiClock-v10"
 #define LED_PIN     D3 //The data pin of the arduino
 #define LDR         A0
 #define BUTTON_L    D1
@@ -96,6 +95,13 @@ void sendData(String subtopic, String data, bool retained) {
     sendData(subtopic, (String(asctime(&tm)) + data).c_str(), retained);
 }
 
+void adjustBrightness() {
+    int value = analogRead(A0);
+    // Exponential scaling of 10bit analog input to 8bit LED brightness
+    int brightness = max(2, (int) (pow(E, 0.0072195 * value) * 0.149831));
+    FastLED.setBrightness(brightness);
+}
+
 uint8 randomColor() {
     return random(0, 256);
 }
@@ -140,16 +146,9 @@ void clearWord(WORD word) {
 }
 
 int findCharPosition(char character, int start) {
-    Serial.print("Trying to find char: ");
-    Serial.println(character);
     for (int i = start; i < 110; i++) {
-        if (character == matrix[i]) {
-            Serial.print("Found at position: ");
-            Serial.println(i);
-            return i;
-        }
+        if (character == matrix[i]) return i;
     }
-    Serial.println("Didn't find it");
     return -1;
 }
 
@@ -163,9 +162,11 @@ void showWord(char const *word, int wordLength) {
         pos = findCharPosition(word[i], pos);
         if (pos == -1) {
             searchEverywhere = true;
+            i--;
             continue;
         }
         pixel[i] = pos;
+        pos--;
     }
     FastLED.clear(true);
     int color = randomColor();
@@ -176,9 +177,10 @@ void showWord(char const *word, int wordLength) {
 }
 
 void showText(bool infinite) {
+    sendData("ack", ": mes-rec", false);
     // Disconnect MQTT to
     // 1. not time-out cause message can run for long time
-    // 2. not receive other messages while this is displayed Broker will cache QOS1 for us
+    // 2. not receive other messages while this is displayed, Broker will cache QOS1 for us
     mqttClient.disconnect();
     FastLED.clear(true);
     bool run = true;
@@ -186,6 +188,7 @@ void showText(bool infinite) {
         ScrollingMsg.SetText((unsigned char *)mqttMessage.buffer, mqttMessage.length);
         while ((!d1Triggered && !d2Triggered) && ScrollingMsg.UpdateText() != -1) {
             FastLED.delay(100);
+            adjustBrightness();
         }
         if (!infinite) run  = false;
     }
@@ -211,7 +214,6 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     if (strcmp(slashPointer + 1, topicMessage) == 0) {
         prepareMessage((char *) payload, length);
     }
-
 }
 
 void handleMinutes() {
@@ -396,13 +398,6 @@ void handleClock() {
 
 }
 
-int readAdc() {
-    int value = analogRead(A0);
-    // Exponential scaling of 10bit analog input to 8bit LED brightness
-    int brightness = max(2, (int) (pow(E, 0.0072195 * value) * 0.149831));
-    return brightness;
-}
-
 void reconnectMqtt() {
     if (!mqttClient.connected()) {
         showWord("MQTT", 4);
@@ -410,8 +405,7 @@ void reconnectMqtt() {
                                false)) {
             //once connected to MQTT broker, subscribe command if any
             mqttClient.subscribe((prefix + topicMessage).c_str(), 1);
-            sendData("ip", WiFi.localIP().toString(), true);
-            sendData("rssi", String(WiFi.RSSI()), true);
+            sendData("log", ": mqtt connected", true);
         } else {
             FastLED.delay(1000);
         }
@@ -422,6 +416,23 @@ void reconnectMqtt() {
 
 void callbackUpdateStarted() {
     showWord("UPDATE", 6);
+}
+
+// Somehow doesn't work, needs to be inspected
+//void callbackUpdateProgress(int current, int total) {
+//    int progress = (current / total) * 110;
+//    setLed(0, progress, randomColor());
+//    FastLED.show();
+//}
+
+void callbackUpdateEnd() {
+    showWord("DONE", 4);
+}
+
+void callbackUpdateError(int error) {
+    showWord("ERROR", 5);
+    Serial.print("OTA error: ");
+    Serial.println(error);
 }
 
 void update() {
@@ -480,11 +491,13 @@ void setup() {
     delay(100);
 
     ESPhttpUpdate.onStart(callbackUpdateStarted);
+//    ESPhttpUpdate.onProgress(callbackUpdateProgress);
+    ESPhttpUpdate.onEnd(callbackUpdateEnd);
+    ESPhttpUpdate.onError(callbackUpdateError);
     update();
 
     mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
     mqttClient.setCallback(mqttCallback);
-    reconnectMqtt();
 
     ScrollingMsg.SetFont(MatriseFontData);
     ScrollingMsg.Init(&ledMatrix, ledMatrix.Width(), ScrollingMsg.FontHeight() + 1, 0, 0);
@@ -493,14 +506,15 @@ void setup() {
     prepareMessage(VERSION, sizeof(VERSION));
     showText(false);
 
+    reconnectMqtt();
+
     FastLED.clear(true);
 }
 
 void loop() {
     updateTime();
     handleClock();
-    int brightness = readAdc();
-    FastLED.setBrightness(brightness);
+    adjustBrightness();
     if (mqttMessage.available) showText(true);
     reconnectMqtt();
     mqttClient.loop();
