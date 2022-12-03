@@ -13,7 +13,7 @@
 #define MY_NTP_SERVER "pool.ntp.org"
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 
-#define VERSION     "LetiClock-v12"
+#define VERSION     "LetiClock-v13"
 #define LED_PIN     D3 //The data pin of the arduino
 #define LDR         A0
 #define BUTTON_L    D1
@@ -24,7 +24,9 @@
 const String prefix = MQTT_PREFIX;
 const char *deviceName = DEVICE_NAME;
 const char *topicMessage = "message";
+
 void reconnectMqtt();
+
 struct {
     bool available = false;
     int length;
@@ -139,12 +141,6 @@ void setWord(WORD word) {
     }
 }
 
-void clearWord(WORD word) {
-    for (int i = word.start; i < word.start + word.length; i++) {
-        clearLed(i);
-    }
-}
-
 int findCharPosition(char character, int start) {
     for (int i = start; i < 110; i++) {
         if (character == matrix[i]) return i;
@@ -168,7 +164,7 @@ void showWord(char const *word, int wordLength) {
         pixel[i] = pos;
         pos--;
     }
-    FastLED.clear(true);
+    FastLED.clearData();
     int color = randomColor();
     for (int i = 0; i < wordLength; i++) {
         setLed(pixel[i], color);
@@ -182,29 +178,28 @@ void showText(bool infinite) {
     // 1. not time-out cause message can run for long time
     // 2. not receive other messages while this is displayed, Broker will cache QOS1 for us
     mqttClient.disconnect();
-    FastLED.clear(true);
+    FastLED.clearData();
     bool run = true;
     while (!d1Triggered && !d2Triggered && run) {
-        ScrollingMsg.SetText((unsigned char *)mqttMessage.buffer, mqttMessage.length);
+        ScrollingMsg.SetText((unsigned char *) mqttMessage.buffer, mqttMessage.length);
         while ((!d1Triggered && !d2Triggered) && ScrollingMsg.UpdateText() != -1) {
             FastLED.delay(100);
             adjustBrightness();
         }
-        if (!infinite) run  = false;
+        if (!infinite) run = false;
     }
     d1Triggered = false;
     d2Triggered = false;
     mqttMessage.available = false;
     previousMinute = 100; // Fill with crap data to trigger clock rendering after message finished
-    FastLED.clear(true);
 }
 
 void prepareMessage(char *payload, unsigned int length) {
     mqttMessage.buffer[0] = EFFECT_SCROLL_LEFT[0];
     mqttMessage.buffer[1] = ' ';
     strncpy(mqttMessage.buffer + 2, payload, length);
-    mqttMessage.buffer[length+2] = ' ';
-    mqttMessage.buffer[length+3] = '\0';
+    mqttMessage.buffer[length + 2] = ' ';
+    mqttMessage.buffer[length + 3] = '\0';
     mqttMessage.available = true;
     mqttMessage.length = length + 3;
 }
@@ -219,219 +214,157 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
 }
 
 void handleMinutes() {
-    if (currentMinute != previousMinute) {
-        setWord(W_ES);
-        setWord(W_IST);
-        int minutes = currentMinute % 5;
-        int color = randomColor();
-        switch (minutes) {
-            case 0:
-                clearLed(110, 4);
-                break;
-            case 4:
-                setLed(111, color);
-            case 3:
-                setLed(110, color);
-            case 2:
-                setLed(112, color);
-            case 1:
-                setLed(113, color);
-        }
+    setWord(W_ES);
+    setWord(W_IST);
+    int minutes = currentMinute % 5;
+    int color = randomColor();
+    switch (minutes) {
+        case 4:
+            setLed(111, color);
+        case 3:
+            setLed(110, color);
+        case 2:
+            setLed(112, color);
+        case 1:
+            setLed(113, color);
+    }
 
-        if (currentMinute >= 0 && currentMinute < 5) {
-            clearWord(W_M_FUENF);
-            clearWord(W_VOR);
-            setWord(W_UHR);
-            return;
-        }
-        if (currentMinute >= 5 && currentMinute < 10) {
-            clearWord(W_UHR);
-            setWord(W_M_FUENF);
+    if (currentMinute >= 0 && currentMinute < 5) {
+        setWord(W_UHR);
+        return;
+    }
+    if (currentMinute >= 5 && currentMinute < 10) {
+        setWord(W_M_FUENF);
+        setWord(W_NACH);
+        return;
+    }
+    if (currentMinute >= 10 && currentMinute < 15) {
+        setWord(W_M_ZEHN);
+        setWord(W_NACH);
+        return;
+    }
+    if (currentMinute >= 15 && currentMinute < 20) {
+        setWord(W_VIERTEL);
+        setWord(W_NACH);
+        return;
+    }
+    if (currentMinute >= 20 && currentMinute < 25) {
+        if (random(0, 2) == 0) {
+            setWord(W_M_ZWANZIG);
             setWord(W_NACH);
-            return;
+        } else {
+            setWord(W_M_ZEHN);
+            setWord(W_VOR);
+            setWord(W_HALB);
+            currentHour++;
         }
-        if (currentMinute >= 10 && currentMinute < 15) {
-            clearWord(W_M_FUENF);
-            clearWord(W_NACH);
+        return;
+    }
+    if (currentMinute >= 25 && currentMinute < 30) {
+        setWord(W_M_FUENF);
+        setWord(W_VOR);
+        setWord(W_HALB);
+        return;
+    }
+    if (currentMinute >= 30 && currentMinute < 35) {
+        setWord(W_HALB);
+        return;
+    }
+    if (currentMinute >= 35 && currentMinute < 40) {
+        setWord(W_M_FUENF);
+        setWord(W_NACH);
+        setWord(W_HALB);
+        return;
+    }
+    if (currentMinute >= 40 && currentMinute < 45) {
+        if (random(0, 2) == 0) {
+            setWord(W_M_ZWANZIG);
+            setWord(W_VOR);
+        } else {
             setWord(W_M_ZEHN);
             setWord(W_NACH);
-            return;
+            setWord(W_HALB);
         }
-        if (currentMinute >= 15 && currentMinute < 20) {
-            clearWord(W_M_ZEHN);
+        return;
+    }
+    if (currentMinute >= 45 && currentMinute < 50) {
+        if (random(0, 2) == 0) {
             setWord(W_VIERTEL);
-            setWord(W_NACH);
-            return;
-        }
-        if (currentMinute >= 20 && currentMinute < 25) {
-            clearWord(W_VIERTEL);
-            clearWord(W_NACH);
-            if (random(0, 2) == 0) {
-                clearWord(W_M_ZEHN);
-                clearWord(W_VOR);
-                clearWord(W_HALB);
-                setWord(W_M_ZWANZIG);
-                setWord(W_NACH);
-            } else {
-                clearWord(W_M_ZWANZIG);
-                clearWord(W_NACH);
-                setWord(W_M_ZEHN);
-                setWord(W_VOR);
-                setWord(W_HALB);
-                currentHour++;
-            }
-            return;
-        }
-        if (currentMinute >= 25 && currentMinute < 30) {
-            clearWord(W_M_ZWANZIG);
-            clearWord(W_NACH);
-            setWord(W_M_FUENF);
             setWord(W_VOR);
-            setWord(W_HALB);
-            return;
+        } else {
+            setWord(W_DREIVIERTEL);
         }
-        if (currentMinute >= 30 && currentMinute < 35) {
-            clearWord(W_M_FUENF);
-            clearWord(W_VOR);
-            setWord(W_HALB);
-            return;
-        }
-        if (currentMinute >= 35 && currentMinute < 40) {
-            setWord(W_M_FUENF);
-            setWord(W_NACH);
-            setWord(W_HALB);
-            return;
-        }
-        if (currentMinute >= 40 && currentMinute < 45) {
-            clearWord(W_M_FUENF);
-            clearWord(W_NACH);
-            clearWord(W_HALB);
-            if (random(0, 2) == 0) {
-                clearWord(W_M_ZEHN);
-                clearWord(W_NACH);
-                clearWord(W_HALB);
-                setWord(W_M_ZWANZIG);
-                setWord(W_VOR);
-            } else {
-                clearWord(W_M_ZWANZIG);
-                clearWord(W_VOR);
-                setWord(W_M_ZEHN);
-                setWord(W_NACH);
-                setWord(W_HALB);
-            }
-            return;
-        }
-        if (currentMinute >= 45 && currentMinute < 50) {
-            clearWord(W_M_ZWANZIG);
-            clearWord(W_VOR);
-            if (random(0, 2) == 0) {
-                clearWord(W_DREIVIERTEL);
-                setWord(W_VIERTEL);
-                setWord(W_VOR);
-            } else {
-                clearWord(W_VOR);
-                setWord(W_DREIVIERTEL);
-            }
-            return;
-        }
-        if (currentMinute >= 50 && currentMinute < 55) {
-            clearWord(W_M_ZWANZIG);
-            clearWord(W_VOR);
-            clearWord(W_DREIVIERTEL);
-            setWord(W_M_ZEHN);
-            setWord(W_VOR);
-            return;
-        }
-        if (currentMinute >= 55) {
-            clearWord(W_M_ZEHN);
-            setWord(W_M_FUENF);
-            setWord(W_VOR);
-            return;
-        }
+        return;
+    }
+    if (currentMinute >= 50 && currentMinute < 55) {
+        setWord(W_M_ZEHN);
+        setWord(W_VOR);
+        return;
+    }
+    if (currentMinute >= 55) {
+        setWord(W_M_FUENF);
+        setWord(W_VOR);
+        return;
     }
 }
 
 void handleHours() {
-    if (currentMinute != previousMinute) {
-        previousMinute = currentMinute;
-        switch (currentHour) {
-            case 1:
-                clearWord(W_S_ZWOELF);
-                clearWord(W_S_ZWEI);
-                if (currentMinute >= 0 && currentMinute < 5) {
-                    clearWord(W_S_EINS);
-                    setWord(W_S_EIN);
-                } else {
-                    setWord(W_S_EINS);
-                }
-                break;
-            case 2:
-                clearWord(W_S_EINS);
-                clearWord(W_S_DREI);
-                setWord(W_S_ZWEI);
-                break;
-            case 3:
-                clearWord(W_S_ZWEI);
-                clearWord(W_S_VIER);
-                setWord(W_S_DREI);
-                break;
-            case 4:
-                clearWord(W_S_DREI);
-                clearWord(W_S_FUENF);
-                setWord(W_S_VIER);
-                break;
-            case 5:
-                clearWord(W_S_VIER);
-                clearWord(W_S_SECHS);
-                setWord(W_S_FUENF);
-                break;
-            case 6:
-                clearWord(W_S_FUENF);
-                clearWord(W_S_SIEBEN);
-                setWord(W_S_SECHS);
-                break;
-            case 7:
-                clearWord(W_S_SECHS);
-                clearWord(W_S_ACHT);
-                setWord(W_S_SIEBEN);
-                break;
-            case 8:
-                clearWord(W_S_SIEBEN);
-                clearWord(W_S_NEUN);
-                setWord(W_S_ACHT);
-                break;
-            case 9:
-                clearWord(W_S_ACHT);
-                clearWord(W_S_ZEHN);
-                setWord(W_S_NEUN);
-                break;
-            case 10:
-                clearWord(W_S_NEUN);
-                clearWord(W_S_ELF);
-                setWord(W_S_ZEHN);
-                break;
-            case 11:
-                clearWord(W_S_ZEHN);
-                clearWord(W_S_ZWOELF);
-                setWord(W_S_ELF);
-                break;
-            case 12:
-            case 0:
-                clearWord(W_S_ELF);
-                clearWord(W_S_EINS);
-                setWord(W_S_ZWOELF);
-                break;
-        }
+    switch (currentHour) {
+        case 1:
+            if (currentMinute >= 0 && currentMinute < 5) {
+                setWord(W_S_EIN);
+            } else {
+                setWord(W_S_EINS);
+            }
+            break;
+        case 2:
+            setWord(W_S_ZWEI);
+            break;
+        case 3:
+            setWord(W_S_DREI);
+            break;
+        case 4:
+            setWord(W_S_VIER);
+            break;
+        case 5:
+            setWord(W_S_FUENF);
+            break;
+        case 6:
+            setWord(W_S_SECHS);
+            break;
+        case 7:
+            setWord(W_S_SIEBEN);
+            break;
+        case 8:
+            setWord(W_S_ACHT);
+            break;
+        case 9:
+            setWord(W_S_NEUN);
+            break;
+        case 10:
+            setWord(W_S_ZEHN);
+            break;
+        case 11:
+            setWord(W_S_ELF);
+            break;
+        case 12:
+        case 0:
+            setWord(W_S_ZWOELF);
+            break;
     }
 }
 
 void handleClock() {
     currentHour = tm.tm_hour;
     currentMinute = tm.tm_min;
-    handleMinutes();
-    if (currentMinute >= 25) currentHour++;
-    if (currentHour > 12) currentHour = currentHour - 12;
-    handleHours();
+    if (currentMinute != previousMinute) {
+        FastLED.clear();
+        previousMinute = currentMinute;
+        handleMinutes();
+        if (currentMinute >= 25) currentHour++;
+        if (currentHour > 12) currentHour = currentHour - 12;
+        handleHours();
+    }
 }
 
 void reconnectMqtt() {
@@ -441,12 +374,11 @@ void reconnectMqtt() {
                                false)) {
             //once connected to MQTT broker, subscribe command if any
             mqttClient.subscribe((prefix + topicMessage).c_str(), 1);
-            sendData("log", ": "  + String(VERSION) + " connected", true);
+            sendData("log", ": " + String(VERSION) + " connected", true);
         } else {
             FastLED.delay(1000);
         }
         previousMinute = 100; // Fake this again to refresh screen afterwards
-        FastLED.clear(true);
     }
 }
 
@@ -543,8 +475,6 @@ void setup() {
     showText(false);
 
     reconnectMqtt();
-
-    FastLED.clear(true);
 }
 
 void loop() {
