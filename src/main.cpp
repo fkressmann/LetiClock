@@ -13,7 +13,7 @@
 #define MY_NTP_SERVER "pool.ntp.org"
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 
-#define VERSION     "LetiClock-v11"
+#define VERSION     "LetiClock-v12"
 #define LED_PIN     D3 //The data pin of the arduino
 #define LDR         A0
 #define BUTTON_L    D1
@@ -265,8 +265,21 @@ void handleMinutes() {
         }
         if (currentMinute >= 20 && currentMinute < 25) {
             clearWord(W_VIERTEL);
-            setWord(W_M_ZWANZIG);
-            setWord(W_NACH);
+            clearWord(W_NACH);
+            if (random(0, 2) == 0) {
+                clearWord(W_M_ZEHN);
+                clearWord(W_VOR);
+                clearWord(W_HALB);
+                setWord(W_M_ZWANZIG);
+                setWord(W_NACH);
+            } else {
+                clearWord(W_M_ZWANZIG);
+                clearWord(W_NACH);
+                setWord(W_M_ZEHN);
+                setWord(W_VOR);
+                setWord(W_HALB);
+                currentHour++;
+            }
             return;
         }
         if (currentMinute >= 25 && currentMinute < 30) {
@@ -293,8 +306,19 @@ void handleMinutes() {
             clearWord(W_M_FUENF);
             clearWord(W_NACH);
             clearWord(W_HALB);
-            setWord(W_M_ZWANZIG);
-            setWord(W_VOR);
+            if (random(0, 2) == 0) {
+                clearWord(W_M_ZEHN);
+                clearWord(W_NACH);
+                clearWord(W_HALB);
+                setWord(W_M_ZWANZIG);
+                setWord(W_VOR);
+            } else {
+                clearWord(W_M_ZWANZIG);
+                clearWord(W_VOR);
+                setWord(W_M_ZEHN);
+                setWord(W_NACH);
+                setWord(W_HALB);
+            }
             return;
         }
         if (currentMinute >= 45 && currentMinute < 50) {
@@ -333,6 +357,7 @@ void handleHours() {
         switch (currentHour) {
             case 1:
                 clearWord(W_S_ZWOELF);
+                clearWord(W_S_ZWEI);
                 if (currentMinute >= 0 && currentMinute < 5) {
                     clearWord(W_S_EINS);
                     setWord(W_S_EIN);
@@ -342,47 +367,58 @@ void handleHours() {
                 break;
             case 2:
                 clearWord(W_S_EINS);
+                clearWord(W_S_DREI);
                 setWord(W_S_ZWEI);
                 break;
             case 3:
                 clearWord(W_S_ZWEI);
+                clearWord(W_S_VIER);
                 setWord(W_S_DREI);
                 break;
             case 4:
                 clearWord(W_S_DREI);
+                clearWord(W_S_FUENF);
                 setWord(W_S_VIER);
                 break;
             case 5:
                 clearWord(W_S_VIER);
+                clearWord(W_S_SECHS);
                 setWord(W_S_FUENF);
                 break;
             case 6:
                 clearWord(W_S_FUENF);
+                clearWord(W_S_SIEBEN);
                 setWord(W_S_SECHS);
                 break;
             case 7:
                 clearWord(W_S_SECHS);
+                clearWord(W_S_ACHT);
                 setWord(W_S_SIEBEN);
                 break;
             case 8:
                 clearWord(W_S_SIEBEN);
+                clearWord(W_S_NEUN);
                 setWord(W_S_ACHT);
                 break;
             case 9:
                 clearWord(W_S_ACHT);
+                clearWord(W_S_ZEHN);
                 setWord(W_S_NEUN);
                 break;
             case 10:
                 clearWord(W_S_NEUN);
+                clearWord(W_S_ELF);
                 setWord(W_S_ZEHN);
                 break;
             case 11:
                 clearWord(W_S_ZEHN);
+                clearWord(W_S_ZWOELF);
                 setWord(W_S_ELF);
                 break;
             case 12:
             case 0:
                 clearWord(W_S_ELF);
+                clearWord(W_S_EINS);
                 setWord(W_S_ZWOELF);
                 break;
         }
@@ -392,13 +428,10 @@ void handleHours() {
 void handleClock() {
     currentHour = tm.tm_hour;
     currentMinute = tm.tm_min;
-
+    handleMinutes();
     if (currentMinute >= 25) currentHour++;
     if (currentHour > 12) currentHour = currentHour - 12;
-
-    handleMinutes();
     handleHours();
-
 }
 
 void reconnectMqtt() {

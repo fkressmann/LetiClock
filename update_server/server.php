@@ -1,7 +1,7 @@
 <?PHP
 
 $db = array(
-    "80:7D:3A:79:01:7B" => "LetiClock-v11"
+    "80:7D:3A:79:01:7B" => "LetiClock-v12"
 );
 
 header('Content-type: text/plain; charset=utf8', true);
