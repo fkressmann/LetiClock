@@ -13,13 +13,15 @@
 #define MY_NTP_SERVER "pool.ntp.org"
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 
-#define VERSION     "LetiClock-v13"
+#define VERSION     "LetiClock-v14"
 #define LED_PIN     D3 //The data pin of the arduino
 #define LDR         A0
 #define BUTTON_L    D1
 #define BUTTON_R    D2
 #define LED_TYPE    WS2812 //The type of the LED stripe
 #define COLOR_ORDER GRB
+
+#define DEBUG
 
 const String prefix = MQTT_PREFIX;
 const char *deviceName = DEVICE_NAME;
@@ -88,6 +90,11 @@ const char *matrix =
         "WACHTZEHNRS"
         "RHUMFSHCESB"; // reversed
 
+
+bool wasButtonPressed() {
+    return d1Triggered || d2Triggered;
+}
+
 void sendData(String subtopic, const char *data, bool retained) {
     subtopic = prefix + subtopic;
     mqttClient.publish(subtopic.c_str(), data, retained);
@@ -110,28 +117,6 @@ uint8 randomColor() {
 
 void setLed(int i, int color) {
     ledMatrix(i).setHSV(color, 255, 255);
-}
-
-void clearLed(int i) {
-    ledMatrix(i).setRGB(0, 0, 0);
-}
-
-void clearLed(int start, int length) {
-    for (int i = start; i < start + length; i++) {
-        clearLed(i);
-    }
-}
-
-void setLed(int start, int length, int color) {
-    for (int i = start; i < start + length; i++) {
-        setLed(i, color);
-    }
-}
-
-void setWord(WORD word, int color) {
-    for (int i = word.start; i < word.start + word.length; i++) {
-        setLed(i, color);
-    }
 }
 
 void setWord(WORD word) {
@@ -179,17 +164,14 @@ void showText(bool infinite) {
     // 2. not receive other messages while this is displayed, Broker will cache QOS1 for us
     mqttClient.disconnect();
     FastLED.clearData();
-    bool run = true;
-    while (!d1Triggered && !d2Triggered && run) {
+    while (!d1Triggered && !d2Triggered) {
         ScrollingMsg.SetText((unsigned char *) mqttMessage.buffer, mqttMessage.length);
-        while ((!d1Triggered && !d2Triggered) && ScrollingMsg.UpdateText() != -1) {
-            FastLED.delay(100);
+        while (!wasButtonPressed() && ScrollingMsg.UpdateText() != -1) {
             adjustBrightness();
+            FastLED.delay(100);
         }
-        if (!infinite) run = false;
+        if (!infinite) break;
     }
-    d1Triggered = false;
-    d2Triggered = false;
     mqttMessage.available = false;
     previousMinute = 100; // Fill with crap data to trigger clock rendering after message finished
 }
@@ -244,8 +226,13 @@ void handleMinutes() {
         return;
     }
     if (currentMinute >= 15 && currentMinute < 20) {
-        setWord(W_VIERTEL);
-        setWord(W_NACH);
+        if (random(0, 2) == 0) {
+            setWord(W_VIERTEL);
+            setWord(W_NACH);
+        } else {
+            setWord(W_VIERTEL);
+            currentHour++;
+        }
         return;
     }
     if (currentMinute >= 20 && currentMinute < 25) {
@@ -369,13 +356,22 @@ void handleClock() {
 
 void reconnectMqtt() {
     if (!mqttClient.connected()) {
+#ifdef DEBUG
+        Serial.println("Connecting to MQTT");
+#endif
         showWord("MQTT", 4);
         if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, "leticlock/lwt", 0, 0, "offline",
                                false)) {
             //once connected to MQTT broker, subscribe command if any
             mqttClient.subscribe((prefix + topicMessage).c_str(), 1);
             sendData("log", ": " + String(VERSION) + " connected", true);
+#ifdef DEBUG
+            Serial.println("MQTT connected");
+#endif
         } else {
+#ifdef DEBUG
+            Serial.println("MQTT connection failed");
+#endif
             FastLED.delay(1000);
         }
         previousMinute = 100; // Fake this again to refresh screen afterwards
@@ -404,6 +400,9 @@ void callbackUpdateError(int error) {
 }
 
 void update() {
+#ifdef DEBUG
+    Serial.println("Asking for update...");
+#endif
     t_httpUpdate_return ret = ESPhttpUpdate.update(espClient, MQTT_SERVER, 443, "/server.php", VERSION);
     switch (ret) {
         case HTTP_UPDATE_FAILED:
@@ -433,25 +432,52 @@ void updateTime() {
     localtime_r(&now, &tm);           // update the structure tm with the current time
 }
 
+void handleButtons() {
+    // Start configportal only if both buttons pressed
+    if (d1Triggered && d2Triggered) {
+#ifdef DEBUG
+        Serial.println("Start config portal");
+#endif
+        WiFiManager wifiManager;
+        Serial.print("Is persistent: ");
+        Serial.println(WiFi.getPersistent());
+        wifiManager.startConfigPortal("LetiClock", "ThisIsChildish:D");
+#ifdef DEBUG
+        Serial.printf("Config finished: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
+#endif
+    }
+    d1Triggered = false;
+    d2Triggered = false;
+}
+
 void setup() {
+#ifdef DEBUG
     Serial.begin(115200);
+#endif
+
+    // Important to attach interrupts before going into WiFi.isConnected() loop!
     pinMode(D1, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(D1), isrD1, FALLING);
-
     pinMode(D2, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(D2), isrD2, FALLING);
 
     FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4).setCorrection(TypicalLEDStrip);
 
+    showWord("WIFI", 4);
+#ifdef DEBUG
     Serial.print("Firmware version: ");
     Serial.println(VERSION);
-    Serial.println("Connecting to WiFi");
+    Serial.printf("Connecting to WiFi: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
+#endif
 
-    showWord("WIFI", 4);
-    WiFiManager wifiManager;
-    wifiManager.autoConnect("LetiClock", "ThisIsChildish:D");
-    Serial.println("");
-    Serial.println("WiFi connected");
+    WiFi.persistent(true);
+    WiFi.begin();
+    while (!WiFi.isConnected()) {
+#ifdef DEBUG
+        Serial.println("WiFi not yet connected...");
+#endif
+    }
+    
     espClient.setFingerprint(SSL_FINGERPRINT);
 
     configTime(MY_TZ, MY_NTP_SERVER);
@@ -478,6 +504,9 @@ void setup() {
 }
 
 void loop() {
+#ifdef DEBUG
+    Serial.printf("WiFi status: %d \n", WiFi.status());
+#endif
     updateTime();
     handleClock();
     adjustBrightness();
@@ -485,5 +514,6 @@ void loop() {
     reconnectMqtt();
     mqttClient.loop();
     if (millis() % 1000 < 2) update();
+    handleButtons();
     FastLED.delay(1000);
 }
