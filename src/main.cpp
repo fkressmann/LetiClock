@@ -92,6 +92,31 @@ const char *matrix =
         "WACHTZEHNRS"
         "RHUMFSHCESB"; // reversed
 
+int debug(const char *format, ...) {
+#ifdef DEBUG
+    // A copy of the official Serial.printf...
+    va_list arg;
+    va_start(arg, format);
+    char temp[64];
+    char* buffer = temp;
+    size_t len = vsnprintf(temp, sizeof(temp), format, arg);
+    va_end(arg);
+    if (len > sizeof(temp) - 1) {
+        buffer = new (std::nothrow) char[len + 1];
+        if (!buffer) {
+            return 0;
+        }
+        va_start(arg, format);
+        vsnprintf(buffer, len + 1, format, arg);
+        va_end(arg);
+    }
+    len = Serial.write((const uint8_t*) buffer, len);
+    if (buffer != temp) {
+        delete[] buffer;
+    }
+    return len;
+#endif
+}
 
 bool wasButtonPressed() {
     return d1Triggered || d2Triggered;
@@ -110,9 +135,7 @@ void adjustBrightness() {
     int value = analogRead(A0);
     // Exponential scaling of 10bit analog input to 8bit LED brightness
     int brightness = max(2, (int) (pow(E, 0.0072195 * value) * 0.149831));
-#ifdef DEBUG
-        Serial.printf("Brightness analog / digital: %d / %d \n", value, brightness);
-#endif
+    debug("Brightness analog / digital: %d / %d \n", value, brightness);
     FastLED.setBrightness(brightness);
 }
 
@@ -150,6 +173,8 @@ void showWord(char const *word, int wordLength) {
             searchEverywhere = true;
             i--;
             continue;
+        } else {
+            searchEverywhere = false;
         }
         pixel[i] = pos;
         pos--;
@@ -363,21 +388,15 @@ void handleClock() {
 
 void reconnectMqtt(bool log) {
     if (!mqttClient.connected()) {
-#ifdef DEBUG
-        Serial.println("Connecting to MQTT");
-#endif
+        debug("Connecting to MQTT");
         if (log) showWord("MQTT", 4);
         if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, "leticlock/lwt", 0, 0, "offline",
                                false)) {
             mqttClient.subscribe((prefix + topicMessage).c_str(), 1);
             if (log) sendData(topicLog, ": " + String(VERSION) + " connected", true);
-#ifdef DEBUG
-            Serial.println("MQTT connected");
-#endif
+            debug("MQTT connected");
         } else {
-#ifdef DEBUG
-            Serial.println("MQTT connection failed");
-#endif
+            debug("MQTT connection failed");
             FastLED.delay(1000);
         }
     }
@@ -393,54 +412,43 @@ void callbackUpdateStarted() {
 
 // Somehow doesn't work, needs to be inspected
 void callbackUpdateProgress(int current, int total) {
-   int progress = ((float) current / (float) total) * 110;
-#ifdef DEBUG
-    Serial.printf("Update current/total:progress %d / %d : %d\n", current, total, progress);
-#endif
-   setLed(progress, randomColor());
-   FastLED.show();
-   FastLED.show(); // Need this twice to be shown, no idea why
+    int progress = ((float) current / (float) total) * 110;
+    debug("Update current/total:progress %d / %d : %d\n", current, total, progress);
+    setLed(progress, randomColor());
+    FastLED.show();
+    FastLED.show(); // Need this twice to be shown, no idea why
 }
 
 void callbackUpdateEnd() {
     showWord("DONE", 4);
-#ifdef DEBUG
-    Serial.println("Update done.");
-#endif
+    debug("Update done.");
 }
 
 void callbackUpdateError(int error) {
     showWord("ERROR", 5);
-#ifdef DEBUG
-    Serial.print("OTA error: ");
-    Serial.println(error);
-#endif
+    debug("OTA error: ");
+    debug("%d", error);
 }
 
 void update() {
-#ifdef DEBUG
-    Serial.println("Asking for update...");
-#endif
+    debug("Asking for update...");
     bool mqttIsConnected = mqttClient.connected();
     if (mqttIsConnected) mqttClient.disconnect();
     t_httpUpdate_return ret = ESPhttpUpdate.update(espClient, MQTT_SERVER, 443, "/server.php", VERSION);
     if (mqttIsConnected) reconnectMqtt(false);
     switch (ret) {
         case HTTP_UPDATE_FAILED:
-#ifdef DEBUG
-            Serial.println(ESPhttpUpdate.getLastErrorString());
-#endif
+            debug(ESPhttpUpdate.getLastErrorString().c_str());
             sendData(topicLog, ESPhttpUpdate.getLastErrorString(), true);
             break;
-#ifdef DEBUG
+
         case HTTP_UPDATE_NO_UPDATES:
-            Serial.println("HTTP_UPDATE_NO_UPDATES");
+            debug("HTTP_UPDATE_NO_UPDATES");
             break;
 
         case HTTP_UPDATE_OK:
-            Serial.println("HTTP_UPDATE_OK");
+            debug("HTTP_UPDATE_OK");
             break;
-#endif
     }
 }
 
@@ -460,15 +468,11 @@ void updateTime() {
 void handleButtons() {
     // Start configportal only if both buttons pressed
     if (d1Triggered && d2Triggered) {
-#ifdef DEBUG
-        Serial.println("Start config portal");
-#endif
+        debug("Start config portal");
         showWord("CONNECT", 7);
         WiFiManager wifiManager;
         wifiManager.startConfigPortal("LetiClock", "ThisIsChildish:D");
-#ifdef DEBUG
-        Serial.printf("Config finished: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
-#endif
+        debug("Config finished: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
     }
     d1Triggered = false;
     d2Triggered = false;
@@ -487,18 +491,14 @@ void setup() {
     FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4).setCorrection(TypicalLEDStrip);
     showWord("WIFI", 4);
 
-#ifdef DEBUG
-    Serial.print("Firmware version: ");
-    Serial.println(VERSION);
-    Serial.printf("Connecting to WiFi: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
-#endif
+    debug("Firmware version: ");
+    debug(VERSION);
+    debug("Connecting to WiFi: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
 
     WiFi.persistent(true);
     WiFi.begin();
     while (!WiFi.isConnected()) {
-#ifdef DEBUG
-        Serial.println("WiFi not yet connected...");
-#endif
+        debug("WiFi not yet connected...");
     }
     
     espClient.setFingerprint(SSL_FINGERPRINT);
@@ -527,9 +527,7 @@ void setup() {
 }
 
 void loop() {
-#ifdef DEBUG
-    Serial.printf("WiFi status: %d \n", WiFi.status());
-#endif
+    debug("WiFi status: %d \n", WiFi.status());
     updateTime();
     handleClock();
     adjustBrightness();
