@@ -26,8 +26,10 @@
 const String prefix = MQTT_PREFIX;
 const char *deviceName = DEVICE_NAME;
 const char *topicMessage = "message";
+const char *topicLog = "log";
 
 void reconnectMqtt();
+void reconnectMqtt(boolean log);
 
 struct {
     bool available = false;
@@ -108,6 +110,9 @@ void adjustBrightness() {
     int value = analogRead(A0);
     // Exponential scaling of 10bit analog input to 8bit LED brightness
     int brightness = max(2, (int) (pow(E, 0.0072195 * value) * 0.149831));
+#ifdef DEBUG
+        Serial.printf("Brightness analog / digital: %d / %d \n", value, brightness);
+#endif
     FastLED.setBrightness(brightness);
 }
 
@@ -149,7 +154,7 @@ void showWord(char const *word, int wordLength) {
         pixel[i] = pos;
         pos--;
     }
-    FastLED.clearData();
+    FastLED.clear(true);
     int color = randomColor();
     for (int i = 0; i < wordLength; i++) {
         setLed(pixel[i], color);
@@ -162,7 +167,8 @@ void showText(bool infinite) {
     // Disconnect MQTT to
     // 1. not time-out cause message can run for long time
     // 2. not receive other messages while this is displayed, Broker will cache QOS1 for us
-    mqttClient.disconnect();
+    bool isMqttConnected = mqttClient.connected();
+    if (isMqttConnected) mqttClient.disconnect();
     FastLED.clearData();
     while (!d1Triggered && !d2Triggered) {
         ScrollingMsg.SetText((unsigned char *) mqttMessage.buffer, mqttMessage.length);
@@ -172,6 +178,7 @@ void showText(bool infinite) {
         }
         if (!infinite) break;
     }
+    if (isMqttConnected) reconnectMqtt(false);
     mqttMessage.available = false;
     previousMinute = 100; // Fill with crap data to trigger clock rendering after message finished
 }
@@ -354,17 +361,16 @@ void handleClock() {
     }
 }
 
-void reconnectMqtt() {
+void reconnectMqtt(bool log) {
     if (!mqttClient.connected()) {
 #ifdef DEBUG
         Serial.println("Connecting to MQTT");
 #endif
-        showWord("MQTT", 4);
+        if (log) showWord("MQTT", 4);
         if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, "leticlock/lwt", 0, 0, "offline",
                                false)) {
-            //once connected to MQTT broker, subscribe command if any
             mqttClient.subscribe((prefix + topicMessage).c_str(), 1);
-            sendData("log", ": " + String(VERSION) + " connected", true);
+            if (log) sendData(topicLog, ": " + String(VERSION) + " connected", true);
 #ifdef DEBUG
             Serial.println("MQTT connected");
 #endif
@@ -374,8 +380,11 @@ void reconnectMqtt() {
 #endif
             FastLED.delay(1000);
         }
-        previousMinute = 100; // Fake this again to refresh screen afterwards
     }
+}
+
+void reconnectMqtt() {
+    reconnectMqtt(true);
 }
 
 void callbackUpdateStarted() {
@@ -403,12 +412,18 @@ void update() {
 #ifdef DEBUG
     Serial.println("Asking for update...");
 #endif
+    bool mqttIsConnected = mqttClient.connected();
+    if (mqttIsConnected) mqttClient.disconnect();
     t_httpUpdate_return ret = ESPhttpUpdate.update(espClient, MQTT_SERVER, 443, "/server.php", VERSION);
+    if (mqttIsConnected) reconnectMqtt(false);
     switch (ret) {
         case HTTP_UPDATE_FAILED:
+#ifdef DEBUG
             Serial.println(ESPhttpUpdate.getLastErrorString());
+#endif
+            sendData(topicLog, ESPhttpUpdate.getLastErrorString(), true);
             break;
-
+#ifdef DEBUG
         case HTTP_UPDATE_NO_UPDATES:
             Serial.println("HTTP_UPDATE_NO_UPDATES");
             break;
@@ -416,6 +431,7 @@ void update() {
         case HTTP_UPDATE_OK:
             Serial.println("HTTP_UPDATE_OK");
             break;
+#endif
     }
 }
 
@@ -454,16 +470,15 @@ void setup() {
 #ifdef DEBUG
     Serial.begin(115200);
 #endif
-
     // Important to attach interrupts before going into WiFi.isConnected() loop!
     pinMode(D1, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(D1), isrD1, FALLING);
     pinMode(D2, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(D2), isrD2, FALLING);
 
-    FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4).setCorrection(TypicalLEDStrip);
-
+    FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4);
     showWord("WIFI", 4);
+
 #ifdef DEBUG
     Serial.print("Firmware version: ");
     Serial.println(VERSION);
