@@ -13,7 +13,7 @@
 #define MY_NTP_SERVER "pool.ntp.org"
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 
-#define VERSION     "LetiClock-v14"
+#define VERSION     "LetiClock-v15"
 #define LED_PIN     D3 //The data pin of the arduino
 #define LDR         A0
 #define BUTTON_L    D1
@@ -392,20 +392,29 @@ void callbackUpdateStarted() {
 }
 
 // Somehow doesn't work, needs to be inspected
-//void callbackUpdateProgress(int current, int total) {
-//    int progress = (current / total) * 110;
-//    setLed(0, progress, randomColor());
-//    FastLED.show();
-//}
+void callbackUpdateProgress(int current, int total) {
+   int progress = ((float) current / (float) total) * 110;
+#ifdef DEBUG
+    Serial.printf("Update current/total:progress %d / %d : %d\n", current, total, progress);
+#endif
+   setLed(progress, randomColor());
+   FastLED.show();
+   FastLED.show(); // Need this twice to be shown, no idea why
+}
 
 void callbackUpdateEnd() {
     showWord("DONE", 4);
+#ifdef DEBUG
+    Serial.println("Update done.");
+#endif
 }
 
 void callbackUpdateError(int error) {
     showWord("ERROR", 5);
+#ifdef DEBUG
     Serial.print("OTA error: ");
     Serial.println(error);
+#endif
 }
 
 void update() {
@@ -454,9 +463,8 @@ void handleButtons() {
 #ifdef DEBUG
         Serial.println("Start config portal");
 #endif
+        showWord("CONNECT", 7);
         WiFiManager wifiManager;
-        Serial.print("Is persistent: ");
-        Serial.println(WiFi.getPersistent());
         wifiManager.startConfigPortal("LetiClock", "ThisIsChildish:D");
 #ifdef DEBUG
         Serial.printf("Config finished: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
@@ -476,7 +484,7 @@ void setup() {
     pinMode(D2, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(D2), isrD2, FALLING);
 
-    FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4);
+    FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4).setCorrection(TypicalLEDStrip);
     showWord("WIFI", 4);
 
 #ifdef DEBUG
@@ -500,7 +508,7 @@ void setup() {
     delay(100);
 
     ESPhttpUpdate.onStart(callbackUpdateStarted);
-//    ESPhttpUpdate.onProgress(callbackUpdateProgress);
+    ESPhttpUpdate.onProgress(callbackUpdateProgress);
     ESPhttpUpdate.onEnd(callbackUpdateEnd);
     ESPhttpUpdate.onError(callbackUpdateError);
     update();
@@ -510,7 +518,7 @@ void setup() {
 
     ScrollingMsg.SetFont(MatriseFontData);
     ScrollingMsg.Init(&ledMatrix, ledMatrix.Width(), ScrollingMsg.FontHeight() + 1, 0, 0);
-    ScrollingMsg.SetTextColrOptions(COLR_RGB | COLR_SINGLE, 0xff, 0x00, 0x00);
+    ScrollingMsg.SetTextColrOptions(COLR_GRAD_AH, 0xff, 0x00, 0x00, 0x00, 0xff, 0x00);
 
     prepareMessage(VERSION, sizeof(VERSION));
     showText(false);
@@ -525,10 +533,10 @@ void loop() {
     updateTime();
     handleClock();
     adjustBrightness();
-    if (mqttMessage.available) showText(true);
     reconnectMqtt();
     mqttClient.loop();
     if (millis() % 1000 < 2) update();
     handleButtons();
     FastLED.delay(1000);
+    if (mqttMessage.available) showText(true);
 }
