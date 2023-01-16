@@ -8,20 +8,22 @@
 #include <DNSServer.h>
 #include <WiFiManager.h>
 #include <PubSubClient.h>
+#ifdef DEBUG
+#include <credentials.debug.h>
+#else
 #include <credentials.h>
+#endif
 
 #define MY_NTP_SERVER "pool.ntp.org"
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 
-#define VERSION     "LetiClock-v15"
-#define LED_PIN     D3 //The data pin of the arduino
+#define VERSION     "LetiClock-v16"
+#define LED_PIN     D3
 #define LDR         A0
 #define BUTTON_L    D1
 #define BUTTON_R    D2
-#define LED_TYPE    WS2812 //The type of the LED stripe
+#define LED_TYPE    WS2812
 #define COLOR_ORDER GRB
-
-#define DEBUG
 
 const String prefix = MQTT_PREFIX;
 const char *deviceName = DEVICE_NAME;
@@ -80,6 +82,15 @@ WORD W_S_ZEHN = {93, 4};
 WORD W_S_SECHS = {104, 5};
 WORD W_UHR = {99, 3};
 
+// first byte encodes array length, rest the LEDs positions
+const int info_WIFI[] = {4, 16, 25, 53, 59};
+const int info_MQTT[] = {4, 43, 33, 48, 92};
+const int info_UPDATE[] = {6, 82, 54, 67, 89, 92, 94};
+const int info_DONE[] = {4, 22, 36, 61, 69};
+const int info_ERROR[] = {5, 0, 23, 29, 36, 68};
+const int info_CONNECT[] = {7, 39, 36, 55, 57, 63, 90, 92};
+const int info_TIME[] = {4, 5, 20, 43, 57};
+
 const char *matrix =
         "ESKISTLF3NF"
         "GIZNAWZNHEZ" // reversed
@@ -92,7 +103,7 @@ const char *matrix =
         "WACHTZEHNRS"
         "RHUMFSHCESB"; // reversed
 
-int debug(const char *format, ...) {
+void debug(const char *format, ...) {
 #ifdef DEBUG
     // A copy of the official Serial.printf...
     va_list arg;
@@ -104,7 +115,7 @@ int debug(const char *format, ...) {
     if (len > sizeof(temp) - 1) {
         buffer = new (std::nothrow) char[len + 1];
         if (!buffer) {
-            return 0;
+            return;
         }
         va_start(arg, format);
         vsnprintf(buffer, len + 1, format, arg);
@@ -114,7 +125,6 @@ int debug(const char *format, ...) {
     if (buffer != temp) {
         delete[] buffer;
     }
-    return len;
 #endif
 }
 
@@ -144,7 +154,19 @@ uint8 randomColor() {
 }
 
 void setLed(int i, int color) {
+    debug("lighing up LED %d\n", i);
     ledMatrix(i).setHSV(color, 255, 255);
+}
+
+void showInfo(const int *info) {
+    FastLED.clear(true);
+    int length = info[0];
+    int color = randomColor();
+    for (int i = 1 ; i <= length; i++) {
+        setLed(info[i], color);
+    }
+    FastLED.show();
+    FastLED.show();
 }
 
 void setWord(WORD word) {
@@ -152,39 +174,6 @@ void setWord(WORD word) {
     for (int i = word.start; i < word.start + word.length; i++) {
         setLed(i, color);
     }
-}
-
-int findCharPosition(char character, int start) {
-    for (int i = start; i < 110; i++) {
-        if (character == matrix[i]) return i;
-    }
-    return -1;
-}
-
-void showWord(char const *word, int wordLength) {
-    int pos = 0;
-    int pixel[wordLength];
-    bool searchEverywhere = false;
-
-    for (int i = 0; i < wordLength; i++) {
-        if (searchEverywhere) pos = 0;
-        pos = findCharPosition(word[i], pos);
-        if (pos == -1) {
-            searchEverywhere = true;
-            i--;
-            continue;
-        } else {
-            searchEverywhere = false;
-        }
-        pixel[i] = pos;
-        pos--;
-    }
-    FastLED.clear(true);
-    int color = randomColor();
-    for (int i = 0; i < wordLength; i++) {
-        setLed(pixel[i], color);
-    }
-    FastLED.show();
 }
 
 void showText(bool infinite) {
@@ -388,15 +377,15 @@ void handleClock() {
 
 void reconnectMqtt(bool log) {
     if (!mqttClient.connected()) {
-        debug("Connecting to MQTT");
-        if (log) showWord("MQTT", 4);
-        if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, "leticlock/lwt", 0, 0, "offline",
+        debug("Connecting to MQTT\n");
+        if (log) showInfo(info_MQTT);
+        if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, MQTT_WILL_TOPIC, 0, 0, "offline",
                                false)) {
             mqttClient.subscribe((prefix + topicMessage).c_str(), 1);
             if (log) sendData(topicLog, ": " + String(VERSION) + " connected", true);
-            debug("MQTT connected");
+            debug("MQTT connected\n");
         } else {
-            debug("MQTT connection failed");
+            debug("MQTT connection failed\n");
             FastLED.delay(1000);
         }
     }
@@ -407,10 +396,9 @@ void reconnectMqtt() {
 }
 
 void callbackUpdateStarted() {
-    showWord("UPDATE", 6);
+    showInfo(info_UPDATE);
 }
 
-// Somehow doesn't work, needs to be inspected
 void callbackUpdateProgress(int current, int total) {
     int progress = ((float) current / (float) total) * 110;
     debug("Update current/total:progress %d / %d : %d\n", current, total, progress);
@@ -420,34 +408,33 @@ void callbackUpdateProgress(int current, int total) {
 }
 
 void callbackUpdateEnd() {
-    showWord("DONE", 4);
-    debug("Update done.");
+    showInfo(info_DONE);
+    debug("Update done\n");
 }
 
 void callbackUpdateError(int error) {
-    showWord("ERROR", 5);
-    debug("OTA error: ");
-    debug("%d", error);
+    showInfo(info_ERROR);
+    debug("OTA error: %d\n", error);
 }
 
 void update() {
-    debug("Asking for update...");
+    debug("Asking for update...\n");
     bool mqttIsConnected = mqttClient.connected();
     if (mqttIsConnected) mqttClient.disconnect();
     t_httpUpdate_return ret = ESPhttpUpdate.update(espClient, MQTT_SERVER, 443, "/server.php", VERSION);
     if (mqttIsConnected) reconnectMqtt(false);
     switch (ret) {
         case HTTP_UPDATE_FAILED:
-            debug(ESPhttpUpdate.getLastErrorString().c_str());
+            debug("%s\n", ESPhttpUpdate.getLastErrorString().c_str());
             sendData(topicLog, ESPhttpUpdate.getLastErrorString(), true);
             break;
 
         case HTTP_UPDATE_NO_UPDATES:
-            debug("HTTP_UPDATE_NO_UPDATES");
+            debug("HTTP_UPDATE_NO_UPDATES\n");
             break;
 
         case HTTP_UPDATE_OK:
-            debug("HTTP_UPDATE_OK");
+            debug("HTTP_UPDATE_OK\n");
             break;
     }
 }
@@ -468,8 +455,8 @@ void updateTime() {
 void handleButtons() {
     // Start configportal only if both buttons pressed
     if (d1Triggered && d2Triggered) {
-        debug("Start config portal");
-        showWord("CONNECT", 7);
+        debug("Start config portal\n");
+        showInfo(info_CONNECT);
         WiFiManager wifiManager;
         wifiManager.startConfigPortal("LetiClock", "ThisIsChildish:D");
         debug("Config finished: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
@@ -489,36 +476,43 @@ void setup() {
     attachInterrupt(digitalPinToInterrupt(D2), isrD2, FALLING);
 
     FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4).setCorrection(TypicalLEDStrip);
-    showWord("WIFI", 4);
+    adjustBrightness();
 
-    debug("Firmware version: ");
-    debug(VERSION);
+    debug("Firmware version: %s\n", VERSION);
+    
+    showInfo(info_WIFI);
     debug("Connecting to WiFi: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
-
     WiFi.persistent(true);
     WiFi.begin();
     while (!WiFi.isConnected()) {
-        debug("WiFi not yet connected...");
+        delay(10);
+        debug(".");
     }
+    debug("\n");
     
     espClient.setFingerprint(SSL_FINGERPRINT);
-
-    configTime(MY_TZ, MY_NTP_SERVER);
-    updateTime();
-    delay(100);
-
+    
     ESPhttpUpdate.onStart(callbackUpdateStarted);
     ESPhttpUpdate.onProgress(callbackUpdateProgress);
     ESPhttpUpdate.onEnd(callbackUpdateEnd);
     ESPhttpUpdate.onError(callbackUpdateError);
     update();
 
+    showInfo(info_TIME);
+    configTime(MY_TZ, MY_NTP_SERVER);
+    // Wait for valid time sync (not year 1970 anymore)
+    do {
+        updateTime();
+        debug("Waiting for valid time sync... Year is: %d\n", tm.tm_year);
+    } while (tm.tm_year == 0);
+    debug("Got valid sync: %s\n", asctime(&tm));
+
     mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
     mqttClient.setCallback(mqttCallback);
 
     ScrollingMsg.SetFont(MatriseFontData);
     ScrollingMsg.Init(&ledMatrix, ledMatrix.Width(), ScrollingMsg.FontHeight() + 1, 0, 0);
-    ScrollingMsg.SetTextColrOptions(COLR_GRAD_AH, 0xff, 0x00, 0x00, 0x00, 0xff, 0x00);
+    ScrollingMsg.SetTextColrOptions(COLR_GRAD_AH, 0xff, 0x00, 0x00, 0x00, 0x00, 0xff);
 
     prepareMessage(VERSION, sizeof(VERSION));
     showText(false);
@@ -529,8 +523,8 @@ void setup() {
 void loop() {
     debug("WiFi status: %d \n", WiFi.status());
     updateTime();
-    handleClock();
     adjustBrightness();
+    handleClock();
     reconnectMqtt();
     mqttClient.loop();
     if (millis() % 1000 < 2) update();
