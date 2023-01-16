@@ -103,31 +103,6 @@ const char *matrix =
         "WACHTZEHNRS"
         "RHUMFSHCESB"; // reversed
 
-void debug(const char *format, ...) {
-#ifdef DEBUG
-    // A copy of the official Serial.printf...
-    va_list arg;
-    va_start(arg, format);
-    char temp[64];
-    char* buffer = temp;
-    size_t len = vsnprintf(temp, sizeof(temp), format, arg);
-    va_end(arg);
-    if (len > sizeof(temp) - 1) {
-        buffer = new (std::nothrow) char[len + 1];
-        if (!buffer) {
-            return;
-        }
-        va_start(arg, format);
-        vsnprintf(buffer, len + 1, format, arg);
-        va_end(arg);
-    }
-    len = Serial.write((const uint8_t*) buffer, len);
-    if (buffer != temp) {
-        delete[] buffer;
-    }
-#endif
-}
-
 bool wasButtonPressed() {
     return d1Triggered || d2Triggered;
 }
@@ -145,7 +120,7 @@ void adjustBrightness() {
     int value = analogRead(A0);
     // Exponential scaling of 10bit analog input to 8bit LED brightness
     int brightness = max(2, (int) (pow(E, 0.0072195 * value) * 0.149831));
-    debug("Brightness analog / digital: %d / %d \n", value, brightness);
+    Serial.printf("Brightness analog / digital: %d / %d \n", value, brightness);
     FastLED.setBrightness(brightness);
 }
 
@@ -154,7 +129,7 @@ uint8 randomColor() {
 }
 
 void setLed(int i, int color) {
-    debug("lighing up LED %d\n", i);
+    Serial.printf("lighing up LED %d\n", i);
     ledMatrix(i).setHSV(color, 255, 255);
 }
 
@@ -377,15 +352,15 @@ void handleClock() {
 
 void reconnectMqtt(bool log) {
     if (!mqttClient.connected()) {
-        debug("Connecting to MQTT\n");
+        Serial.printf("Connecting to MQTT\n");
         if (log) showInfo(info_MQTT);
         if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, MQTT_WILL_TOPIC, 0, 0, "offline",
                                false)) {
             mqttClient.subscribe((prefix + topicMessage).c_str(), 1);
             if (log) sendData(topicLog, ": " + String(VERSION) + " connected", true);
-            debug("MQTT connected\n");
+            Serial.printf("MQTT connected\n");
         } else {
-            debug("MQTT connection failed\n");
+            Serial.printf("MQTT connection failed\n");
             FastLED.delay(1000);
         }
     }
@@ -401,7 +376,7 @@ void callbackUpdateStarted() {
 
 void callbackUpdateProgress(int current, int total) {
     int progress = ((float) current / (float) total) * 110;
-    debug("Update current/total:progress %d / %d : %d\n", current, total, progress);
+    Serial.printf("Update current/total:progress %d / %d : %d\n", current, total, progress);
     setLed(progress, randomColor());
     FastLED.show();
     FastLED.show(); // Need this twice to be shown, no idea why
@@ -409,32 +384,32 @@ void callbackUpdateProgress(int current, int total) {
 
 void callbackUpdateEnd() {
     showInfo(info_DONE);
-    debug("Update done\n");
+    Serial.printf("Update done\n");
 }
 
 void callbackUpdateError(int error) {
     showInfo(info_ERROR);
-    debug("OTA error: %d\n", error);
+    Serial.printf("OTA error: %d\n", error);
 }
 
 void update() {
-    debug("Asking for update...\n");
+    Serial.printf("Asking for update...\n");
     bool mqttIsConnected = mqttClient.connected();
     if (mqttIsConnected) mqttClient.disconnect();
     t_httpUpdate_return ret = ESPhttpUpdate.update(espClient, MQTT_SERVER, 443, "/server.php", VERSION);
     if (mqttIsConnected) reconnectMqtt(false);
     switch (ret) {
         case HTTP_UPDATE_FAILED:
-            debug("%s\n", ESPhttpUpdate.getLastErrorString().c_str());
+            Serial.printf("%s\n", ESPhttpUpdate.getLastErrorString().c_str());
             sendData(topicLog, ESPhttpUpdate.getLastErrorString(), true);
             break;
 
         case HTTP_UPDATE_NO_UPDATES:
-            debug("HTTP_UPDATE_NO_UPDATES\n");
+            Serial.printf("HTTP_UPDATE_NO_UPDATES\n");
             break;
 
         case HTTP_UPDATE_OK:
-            debug("HTTP_UPDATE_OK\n");
+            Serial.printf("HTTP_UPDATE_OK\n");
             break;
     }
 }
@@ -455,20 +430,18 @@ void updateTime() {
 void handleButtons() {
     // Start configportal only if both buttons pressed
     if (d1Triggered && d2Triggered) {
-        debug("Start config portal\n");
+        Serial.printf("Start config portal\n");
         showInfo(info_CONNECT);
         WiFiManager wifiManager;
         wifiManager.startConfigPortal("LetiClock", "ThisIsChildish:D");
-        debug("Config finished: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
+        Serial.printf("Config finished: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
     }
     d1Triggered = false;
     d2Triggered = false;
 }
 
 void setup() {
-#ifdef DEBUG
     Serial.begin(115200);
-#endif
     // Important to attach interrupts before going into WiFi.isConnected() loop!
     pinMode(D1, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(D1), isrD1, FALLING);
@@ -478,17 +451,17 @@ void setup() {
     FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4).setCorrection(TypicalLEDStrip);
     adjustBrightness();
 
-    debug("Firmware version: %s\n", VERSION);
+    Serial.printf("Firmware version: %s\n", VERSION);
     
     showInfo(info_WIFI);
-    debug("Connecting to WiFi: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
+    Serial.printf("Connecting to WiFi: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
     WiFi.persistent(true);
     WiFi.begin();
     while (!WiFi.isConnected()) {
         delay(10);
-        debug(".");
+        Serial.printf(".");
     }
-    debug("\n");
+    Serial.printf("\n");
     
     espClient.setFingerprint(SSL_FINGERPRINT);
     
@@ -503,9 +476,9 @@ void setup() {
     // Wait for valid time sync (not year 1970 anymore)
     do {
         updateTime();
-        debug("Waiting for valid time sync... Year is: %d\n", tm.tm_year);
+        Serial.printf("Waiting for valid time sync... Year is: %d\n", tm.tm_year);
     } while (tm.tm_year == 0);
-    debug("Got valid sync: %s\n", asctime(&tm));
+    Serial.printf("Got valid sync: %s\n", asctime(&tm));
 
     mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
     mqttClient.setCallback(mqttCallback);
@@ -521,7 +494,7 @@ void setup() {
 }
 
 void loop() {
-    debug("WiFi status: %d \n", WiFi.status());
+    Serial.printf("WiFi status: %d \n", WiFi.status());
     updateTime();
     adjustBrightness();
     handleClock();
