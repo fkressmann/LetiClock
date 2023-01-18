@@ -17,7 +17,7 @@
 #define MY_NTP_SERVER "pool.ntp.org"
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 
-#define VERSION     "LetiClock-v16"
+#define VERSION     "LetiClock-v17"
 #define LED_PIN     D3
 #define LDR         A0
 #define BUTTON_L    D1
@@ -117,7 +117,7 @@ void sendData(String subtopic, String data, bool retained) {
 }
 
 void adjustBrightness() {
-    int value = analogRead(A0);
+    int value = analogRead(LDR);
     // Exponential scaling of 10bit analog input to 8bit LED brightness
     int brightness = max(2, (int) (pow(E, 0.0072195 * value) * 0.149831));
     Serial.printf("Brightness analog / digital: %d / %d \n", value, brightness);
@@ -443,9 +443,9 @@ void handleButtons() {
 void setup() {
     Serial.begin(115200);
     // Important to attach interrupts before going into WiFi.isConnected() loop!
-    pinMode(D1, INPUT_PULLUP);
+    pinMode(BUTTON_L, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(D1), isrD1, FALLING);
-    pinMode(D2, INPUT_PULLUP);
+    pinMode(BUTTON_R, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(D2), isrD2, FALLING);
 
     FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4).setCorrection(TypicalLEDStrip);
@@ -458,6 +458,7 @@ void setup() {
     WiFi.persistent(true);
     WiFi.begin();
     while (!WiFi.isConnected()) {
+        handleButtons(); // Check this every loop run to be able to start config portal in this loop
         delay(10);
         Serial.printf(".");
     }
@@ -474,10 +475,13 @@ void setup() {
     showInfo(info_TIME);
     configTime(MY_TZ, MY_NTP_SERVER);
     // Wait for valid time sync (not year 1970 anymore)
+    Serial.println("Waiting for valid time sync...");
     do {
+        handleButtons(); // Check this every loop run to be able to start config portal in this loop
+        delay(100); // Allow some time for getting a sync
         updateTime();
-        Serial.printf("Waiting for valid time sync... Year is: %d\n", tm.tm_year);
-    } while (tm.tm_year == 0);
+        Serial.printf("Year is: %d\n", tm.tm_year);
+    } while (tm.tm_year < 100); // Years before 2000 -> indicates an issue
     Serial.printf("Got valid sync: %s\n", asctime(&tm));
 
     mqttClient.setServer(MQTT_SERVER, MQTT_PORT);
@@ -495,10 +499,10 @@ void setup() {
 
 void loop() {
     Serial.printf("WiFi status: %d \n", WiFi.status());
+    reconnectMqtt();
     updateTime();
     adjustBrightness();
     handleClock();
-    reconnectMqtt();
     mqttClient.loop();
     if (millis() % 1000 < 2) update();
     handleButtons();
