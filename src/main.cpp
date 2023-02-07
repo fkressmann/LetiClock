@@ -8,11 +8,7 @@
 #include <DNSServer.h>
 #include <WiFiManager.h>
 #include <PubSubClient.h>
-#ifdef DEBUG
-#include <credentials.debug.h>
-#else
 #include <credentials.h>
-#endif
 
 #define MY_NTP_SERVER "pool.ntp.org"
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
@@ -26,12 +22,14 @@
 #define COLOR_ORDER GRB
 
 const String prefix = MQTT_PREFIX;
-const char *deviceName = DEVICE_NAME;
 const char *topicMessage = "message";
 const char *topicLog = "log";
 
 void reconnectMqtt();
+
 void reconnectMqtt(boolean log);
+
+void doBusiness();
 
 struct {
     bool available = false;
@@ -111,6 +109,7 @@ bool wasButtonPressed() {
 
 void sendData(String subtopic, const char *data, bool retained) {
     subtopic = prefix + subtopic;
+    Serial.printf("Sending %s via MQTT to topic %s\n", data, subtopic.c_str());
     mqttClient.publish(subtopic.c_str(), data, retained);
 }
 
@@ -140,7 +139,7 @@ void showInfo(const int *info) {
     FastLED.clear(true);
     int length = info[0];
     int color = randomColor();
-    for (int i = 1 ; i <= length; i++) {
+    for (int i = 1; i <= length; i++) {
         setLed(info[i], color);
     }
     FastLED.show();
@@ -159,8 +158,8 @@ void showText(bool infinite) {
     // Disconnect MQTT to
     // 1. not time-out cause message can run for long time
     // 2. not receive other messages while this is displayed, Broker will cache QOS1 for us
-    bool isMqttConnected = mqttClient.connected();
-    if (isMqttConnected) mqttClient.disconnect();
+    bool wasMqttConnected = mqttClient.connected();
+    if (wasMqttConnected) mqttClient.disconnect();
     FastLED.clearData();
     while (!d1Triggered && !d2Triggered) {
         ScrollingMsg.SetText((unsigned char *) mqttMessage.buffer, mqttMessage.length);
@@ -170,7 +169,7 @@ void showText(bool infinite) {
         }
         if (!infinite) break;
     }
-    if (isMqttConnected) reconnectMqtt(false);
+    if (wasMqttConnected) reconnectMqtt(false);
     mqttMessage.available = false;
     previousMinute = 100; // Fill with crap data to trigger clock rendering after message finished
 }
@@ -178,19 +177,18 @@ void showText(bool infinite) {
 void prepareMessage(char *payload, unsigned int length) {
     mqttMessage.buffer[0] = EFFECT_SCROLL_LEFT[0];
     mqttMessage.buffer[1] = ' ';
-    strncpy(mqttMessage.buffer + 2, payload, length);
-    mqttMessage.buffer[length + 2] = ' ';
-    mqttMessage.buffer[length + 3] = '\0';
+    mqttMessage.buffer[2] = ' ';
+    strncpy(mqttMessage.buffer + 3, payload, length);
+    mqttMessage.buffer[length + 3] = ' ';
+    mqttMessage.buffer[length + 4] = '\0';
     mqttMessage.available = true;
-    mqttMessage.length = length + 3;
+    mqttMessage.length = length + 4;
 }
 
 void mqttCallback(char *topic, byte *payload, unsigned int length) {
     char *slashPointer = strrchr(topic, '/');
     if (strcmp(slashPointer + 1, topicMessage) == 0) {
         prepareMessage((char *) payload, length);
-    } else {
-        sendData("ack", ": pong", false);
     }
 }
 
@@ -355,15 +353,25 @@ void handleClock() {
 
 void reconnectMqtt(bool log) {
     if (!mqttClient.connected()) {
-        Serial.printf("Connecting to MQTT\n");
+        Serial.println("Connecting to MQTT");
         if (log) showInfo(info_MQTT);
-        if (mqttClient.connect(DEVICE_NAME, MQTT_USER, MQTT_PASSWORD, MQTT_WILL_TOPIC, 0, 0, "offline",
-                               false)) {
+        if (mqttClient.connect(
+                DEVICE_NAME,
+                MQTT_USER,
+                MQTT_PASSWORD,
+                (prefix + "lwt").c_str(),
+                0,
+                true,
+                "offline",
+                false)
+                ) {
             mqttClient.subscribe((prefix + topicMessage).c_str(), 1);
-            if (log) sendData(topicLog, ": " + String(VERSION) + " connected", true);
-            Serial.printf("MQTT connected\n");
+            if (log) sendData("lwt",
+                     String(asctime(&tm)) + ": " + String(VERSION) + " connected",
+                     true);
+            Serial.println("MQTT connected");
         } else {
-            Serial.printf("MQTT connection failed\n");
+            Serial.println("MQTT connection failed");
             FastLED.delay(1000);
         }
     }
@@ -397,10 +405,10 @@ void callbackUpdateError(int error) {
 
 void update() {
     Serial.printf("Asking for update...\n");
-    bool mqttIsConnected = mqttClient.connected();
-    if (mqttIsConnected) mqttClient.disconnect();
+    bool wasMqttConnected = mqttClient.connected();
+    if (wasMqttConnected) mqttClient.disconnect();
     t_httpUpdate_return ret = ESPhttpUpdate.update(espClient, MQTT_SERVER, 443, "/server.php", VERSION);
-    if (mqttIsConnected) reconnectMqtt(false);
+    if (wasMqttConnected) reconnectMqtt(false);
     switch (ret) {
         case HTTP_UPDATE_FAILED:
             Serial.printf("%s\n", ESPhttpUpdate.getLastErrorString().c_str());
@@ -431,7 +439,7 @@ void updateTime() {
 }
 
 void handleButtons() {
-    // Start configportal only if both buttons pressed
+    // Start config portal only if both buttons pressed
     if (d1Triggered && d2Triggered) {
         Serial.printf("Start config portal\n");
         showInfo(info_CONNECT);
@@ -458,6 +466,14 @@ void handleSerialInput() {
     }
 }
 
+// To be called in all kinds of loop actions without MQTT
+void doBusiness() {
+    adjustBrightness();
+    handleButtons();
+    handleSerialInput();
+    FastLED.show();
+}
+
 void setup() {
     Serial.begin(115200);
     // Important to attach interrupts before going into WiFi.isConnected() loop!
@@ -470,20 +486,20 @@ void setup() {
     adjustBrightness();
 
     Serial.printf("Firmware version: %s\n", VERSION);
-    
+
     showInfo(info_WIFI);
     Serial.printf("Connecting to WiFi: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
     WiFi.persistent(true);
     WiFi.begin();
     while (!WiFi.isConnected()) {
         delay(500);
-        handleButtons(); // Check this every loop run to be able to start config portal in this loop
-        Serial.printf(".");
+        doBusiness();
+        Serial.print(".");
     }
-    Serial.printf("\n");
-    
+    Serial.println();
+
     espClient.setFingerprint(SSL_FINGERPRINT);
-    
+
     ESPhttpUpdate.onStart(callbackUpdateStarted);
     ESPhttpUpdate.onProgress(callbackUpdateProgress);
     ESPhttpUpdate.onEnd(callbackUpdateEnd);
@@ -495,11 +511,10 @@ void setup() {
     // Wait for valid time sync (not year 1970 anymore)
     Serial.println("Waiting for valid time sync...");
     do {
-        handleButtons(); // Check this every loop run to be able to start config portal in this loop
+        doBusiness();
         delay(100); // Allow some time for getting a sync
-        adjustBrightness();
         updateTime();
-        Serial.printf("Year is: %d\n", tm.tm_year);
+        Serial.printf("Year is: %d\n", tm.tm_year + 1900);
     } while (tm.tm_year < 100); // Years before 2000 -> indicates an issue
     Serial.printf("Got valid sync: %s\n", asctime(&tm));
 
@@ -520,12 +535,10 @@ void loop() {
     Serial.printf("WiFi status: %d \n", WiFi.status());
     reconnectMqtt();
     updateTime();
-    adjustBrightness();
+    doBusiness();
     handleClock();
     mqttClient.loop();
     if (millis() % 1000 < 2) update();
-    handleButtons();
-    handleSerialInput();
     FastLED.delay(1000);
     if (mqttMessage.available) showText(true);
 }
