@@ -17,7 +17,7 @@
 #define MY_NTP_SERVER "pool.ntp.org"
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 
-#define VERSION     "LetiClock-v17"
+#define VERSION     "LetiClock-v18"
 #define LED_PIN     D3
 #define LDR         A0
 #define BUTTON_L    D1
@@ -85,11 +85,11 @@ WORD W_UHR = {99, 3};
 // first byte encodes array length, rest the LEDs positions
 const int info_WIFI[] = {4, 16, 25, 53, 59};
 const int info_MQTT[] = {4, 43, 33, 48, 92};
-const int info_UPDATE[] = {6, 82, 54, 67, 89, 92, 94};
+const int info_UPDATE[] = {6, 8, 54, 67, 89, 92, 94};
 const int info_DONE[] = {4, 22, 36, 61, 69};
 const int info_ERROR[] = {5, 0, 23, 29, 36, 68};
-const int info_CONNECT[] = {7, 39, 36, 55, 57, 63, 90, 92};
-const int info_TIME[] = {4, 5, 20, 43, 57};
+const int info_CONNECT[] = {7, 39, 36, 55, 61, 69, 90, 92};
+const int info_TIME[] = {4, 5, 12, 33, 56};
 
 const char *matrix =
         "ESKISTLF3NF"
@@ -102,6 +102,8 @@ const char *matrix =
         "REIVNUENFLE" // reversed
         "WACHTZEHNRS"
         "RHUMFSHCESB"; // reversed
+
+char serialBuffer[4] = {};
 
 bool wasButtonPressed() {
     return d1Triggered || d2Triggered;
@@ -122,6 +124,7 @@ void adjustBrightness() {
     int brightness = max(2, (int) (pow(E, 0.0072195 * value) * 0.149831));
     Serial.printf("Brightness analog / digital: %d / %d \n", value, brightness);
     FastLED.setBrightness(brightness);
+    FastLED.show();
 }
 
 uint8 randomColor() {
@@ -440,6 +443,21 @@ void handleButtons() {
     d2Triggered = false;
 }
 
+void handleSerialInput() {
+    if (Serial.available()) {
+        int count = Serial.readBytesUntil('\n', serialBuffer, 4);
+        Serial.printf("Received serial: %s \n", serialBuffer);
+        if (count > 1) {
+            int ledToLightUp = atoi(serialBuffer);
+            setLed(ledToLightUp, randomColor());
+            Serial.printf("Lighting up LED %d \n", ledToLightUp);
+        } else if (count == 1) {
+            FastLED.clear(true);
+            Serial.println("Clearing LED data");
+        }
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     // Important to attach interrupts before going into WiFi.isConnected() loop!
@@ -458,8 +476,8 @@ void setup() {
     WiFi.persistent(true);
     WiFi.begin();
     while (!WiFi.isConnected()) {
+        delay(500);
         handleButtons(); // Check this every loop run to be able to start config portal in this loop
-        delay(10);
         Serial.printf(".");
     }
     Serial.printf("\n");
@@ -479,6 +497,7 @@ void setup() {
     do {
         handleButtons(); // Check this every loop run to be able to start config portal in this loop
         delay(100); // Allow some time for getting a sync
+        adjustBrightness();
         updateTime();
         Serial.printf("Year is: %d\n", tm.tm_year);
     } while (tm.tm_year < 100); // Years before 2000 -> indicates an issue
@@ -506,6 +525,7 @@ void loop() {
     mqttClient.loop();
     if (millis() % 1000 < 2) update();
     handleButtons();
+    handleSerialInput();
     FastLED.delay(1000);
     if (mqttMessage.available) showText(true);
 }
