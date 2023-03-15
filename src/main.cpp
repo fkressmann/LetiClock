@@ -46,7 +46,8 @@ int previousMinute = 100; // Init with some insane value to trigger update on bo
 const double E = 2.71828;
 time_t now;
 tm tm;
-bool d1Triggered, d2Triggered = false;
+bool buttonL, buttonR = false;
+bool outputEnabled = true;
 
 struct WORD {
     int start;
@@ -81,7 +82,8 @@ WORD W_UHR = {99, 3};
 // first byte encodes array length, rest the LEDs positions
 const int info_WIFI[] = {4, 16, 25, 53, 59};
 const int info_MQTT[] = {4, 43, 33, 48, 92};
-const int info_MQT[] = {3, 43, 33, 48}; // Used to display 'MQT' while displaying the time as this does not use any letters that time would use
+const int info_MQT[] = {3, 43, 33,
+                        48}; // Used to display 'MQT' while displaying the time as this does not use any letters that time would use
 const int info_UPDATE[] = {6, 8, 54, 67, 89, 92, 94};
 const int info_DONE[] = {4, 22, 36, 61, 69};
 const int info_ERROR[] = {5, 0, 23, 29, 36, 68};
@@ -103,7 +105,7 @@ const char *matrix =
 char serialBuffer[4] = {};
 
 bool wasButtonPressed() {
-    return d1Triggered || d2Triggered;
+    return buttonL || buttonR;
 }
 
 void sendData(String subtopic, const char *data, bool retained) {
@@ -176,27 +178,6 @@ void setWord(WORD word) {
     for (int i = word.start; i < word.start + word.length; i++) {
         setLed(i, color);
     }
-}
-
-void showText(bool infinite) {
-    sendData("ack", ": mes-rec", false);
-    // Disconnect MQTT to
-    // 1. not time-out cause message can run for long time
-    // 2. not receive other messages while this is displayed, Broker will cache QOS1 for us
-    bool wasMqttConnected = mqttClient.connected();
-    if (wasMqttConnected) mqttClient.disconnect();
-    FastLED.clearData();
-    while (!d1Triggered && !d2Triggered) {
-        ScrollingMsg.SetText((unsigned char *) mqttMessage.buffer, mqttMessage.length);
-        while (!wasButtonPressed() && ScrollingMsg.UpdateText() != -1) {
-            adjustBrightness();
-            FastLED.delay(100);
-        }
-        if (!infinite) break;
-    }
-    if (wasMqttConnected) reconnectMqtt(false);
-    mqttMessage.available = false;
-    previousMinute = 100; // Fill with crap data to trigger clock rendering after message finished
 }
 
 void prepareMessage(char *payload, unsigned int length) {
@@ -363,20 +344,49 @@ void handleHours() {
     }
 }
 
-void handleClock() {
+void renderClock() {
     currentHour = tm.tm_hour;
     currentMinute = tm.tm_min;
+    FastLED.clear();
+    handleMinutes();
+    if (currentMinute >= 25) currentHour++;
+    if (currentHour > 12) currentHour = currentHour - 12;
+    handleHours();
+    if (!mqttClient.connected()) setTranslucentMqt(); // Show MQT when connection is not established
+    FastLED.show();
+    FastLED.show();
+}
+
+void handleClock() {
+    currentMinute = tm.tm_min;
     if (currentMinute != previousMinute) {
-        FastLED.clear();
+        renderClock();
         previousMinute = currentMinute;
-        handleMinutes();
-        if (currentMinute >= 25) currentHour++;
-        if (currentHour > 12) currentHour = currentHour - 12;
-        handleHours();
-        if (!mqttClient.connected()) setTranslucentMqt(); // Show MQT when connection is not established
-        FastLED.show();
-        FastLED.show();
     }
+}
+
+void showText(bool infinite) {
+    sendData("ack", ": mes-rec", false);
+    // Disconnect MQTT to
+    // 1. not time-out cause message can run for long time
+    // 2. not receive other messages while this is displayed, Broker will cache QOS1 for us
+    bool wasMqttConnected = mqttClient.connected();
+    if (wasMqttConnected) mqttClient.disconnect();
+    FastLED.clearData();
+    while (!buttonL && !buttonR) {
+        ScrollingMsg.SetText((unsigned char *) mqttMessage.buffer, mqttMessage.length);
+        while (!wasButtonPressed() && ScrollingMsg.UpdateText() != -1) {
+            adjustBrightness();
+            FastLED.delay(100);
+        }
+        if (!infinite) break;
+    }
+    buttonL = false; // Clear button press to not trigger unwanted actions in next handleButtons() run
+    buttonR = false;
+    if (wasMqttConnected) reconnectMqtt(false);
+    mqttMessage.available = false;
+    outputEnabled = true;
+    renderClock(); // Directly trigger rendering of clock;
 }
 
 void reconnectMqtt(bool log) {
@@ -396,9 +406,10 @@ void reconnectMqtt(bool log) {
                 false)
                 ) {
             mqttClient.subscribe((prefix + topicMessage).c_str(), 1);
-            if (log) sendData("lwt",
-                     String(asctime(&tm)) + ": " + String(VERSION) + " connected",
-                     true);
+            if (log)
+                sendData("lwt",
+                         String(asctime(&tm)) + ": " + String(VERSION) + " connected",
+                         true);
             clearTranslucentMqt();
             Serial.println("MQTT connected");
         } else {
@@ -452,12 +463,12 @@ void update() {
     }
 }
 
-void IRAM_ATTR isrD1() {
-    d1Triggered = true;
+void IRAM_ATTR isrButtonL() {
+    buttonL = true;
 }
 
-void IRAM_ATTR isrD2() {
-    d2Triggered = true;
+void IRAM_ATTR isrButtonR() {
+    buttonR = true;
 }
 
 void updateTime() {
@@ -467,15 +478,27 @@ void updateTime() {
 
 void handleButtons() {
     // Start config portal only if both buttons pressed
-    if (d1Triggered && d2Triggered) {
+    if (buttonL && buttonR) {
         Serial.printf("Start config portal\n");
         showInfo(info_CONNECT);
         WiFiManager wifiManager;
         wifiManager.startConfigPortal("LetiClock", "ThisIsChildish:D");
         Serial.printf("Config finished: %s: %s \n", WiFi.SSID().c_str(), WiFi.psk().c_str());
+    } else if (buttonL) {
+        if (outputEnabled) {
+            // Disable output
+            Serial.println("Disabling output");
+            FastLED.clear(true);
+            outputEnabled = false;
+        } else {
+            // Enable output
+            Serial.println("Enabling output");
+            outputEnabled = true;
+            renderClock(); // Directly trigger rendering of clock
+        }
     }
-    d1Triggered = false;
-    d2Triggered = false;
+    buttonL = false;
+    buttonR = false;
 }
 
 void handleSerialInput() {
@@ -495,7 +518,7 @@ void handleSerialInput() {
 
 // To be called in all kinds of loop actions without MQTT
 void doBusiness() {
-    adjustBrightness();
+    if (outputEnabled) adjustBrightness();
     FastLED.show();
     handleButtons();
     handleSerialInput();
@@ -507,9 +530,9 @@ void setup() {
     Serial.begin(115200);
     // Important to attach interrupts before going into WiFi.isConnected() loop!
     pinMode(BUTTON_L, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(D1), isrD1, FALLING);
+    attachInterrupt(digitalPinToInterrupt(BUTTON_L), isrButtonL, FALLING);
     pinMode(BUTTON_R, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(D2), isrD2, FALLING);
+    attachInterrupt(digitalPinToInterrupt(BUTTON_R), isrButtonR, FALLING);
 
     FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(ledMatrix[0], ledMatrix.Size() + 4).setCorrection(TypicalLEDStrip);
     adjustBrightness();
@@ -561,7 +584,6 @@ void setup() {
 }
 
 void loop() {
-    Serial.printf("WiFi status: %d \n", WiFi.status());
     FastLED.show();
     reconnectMqtt(false);
     FastLED.show();
@@ -569,7 +591,7 @@ void loop() {
     FastLED.show();
     doBusiness();
     FastLED.show();
-    handleClock();
+    if (outputEnabled) handleClock();
     FastLED.show();
     mqttClient.loop();
     if (millis() % 1000 < 2) update();
