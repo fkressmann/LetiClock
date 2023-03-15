@@ -25,8 +25,6 @@ const String prefix = MQTT_PREFIX;
 const char *topicMessage = "message";
 const char *topicLog = "log";
 
-void reconnectMqtt();
-
 void reconnectMqtt(boolean log);
 
 void doBusiness();
@@ -83,6 +81,7 @@ WORD W_UHR = {99, 3};
 // first byte encodes array length, rest the LEDs positions
 const int info_WIFI[] = {4, 16, 25, 53, 59};
 const int info_MQTT[] = {4, 43, 33, 48, 92};
+const int info_MQT[] = {3, 43, 33, 48}; // Used to display 'MQT' while displaying the time as this does not use any letters that time would use
 const int info_UPDATE[] = {6, 8, 54, 67, 89, 92, 94};
 const int info_DONE[] = {4, 22, 36, 61, 69};
 const int info_ERROR[] = {5, 0, 23, 29, 36, 68};
@@ -126,13 +125,17 @@ void adjustBrightness() {
     FastLED.show();
 }
 
-uint8 randomColor() {
+uint8_t randomColor() {
     return random(0, 256);
 }
 
-void setLed(int i, int color) {
-    Serial.printf("lighing up LED %d\n", i);
-    ledMatrix(i).setHSV(color, 255, 255);
+void setLed(uint8_t i, uint8_t h, uint8_t s, uint8_t v) {
+    Serial.printf("Setting LED %d (H%d S%d V%d)\n", i, h, s, v);
+    ledMatrix(i).setHSV(h, s, v);
+}
+
+void setLed(uint8_t i, uint8_t color) {
+    setLed(i, color, 255, 255);
 }
 
 void showInfo(const int *info) {
@@ -144,6 +147,28 @@ void showInfo(const int *info) {
     }
     FastLED.show();
     FastLED.show();
+}
+
+void setTranslucentMqt(uint8_t brightness) {
+    Serial.println("Setting translucent MQT");
+    int length = info_MQT[0];
+    int color = randomColor();
+    for (int i = 1; i <= length; i++) {
+        setLed(info_MQT[i], color, 255, brightness);
+    }
+    FastLED.show();
+    FastLED.show();
+}
+
+void setTranslucentMqt() {
+    setTranslucentMqt(255);
+    // ToDo: Change this to a lower brightness as soon as using a Async MQTT lib
+    // at the moment, mqttClint.connect() is blocking for up to 5 sec which prevents FastLED from dithering
+    // and thus MQT might not be visible during connection when master brightness is low
+}
+
+void clearTranslucentMqt() {
+    setTranslucentMqt(0);
 }
 
 void setWord(WORD word) {
@@ -176,11 +201,11 @@ void showText(bool infinite) {
 
 void prepareMessage(char *payload, unsigned int length) {
     mqttMessage.buffer[0] = EFFECT_SCROLL_LEFT[0];
-    mqttMessage.buffer[1] = ' ';
+    mqttMessage.buffer[1] = ' '; // Two spaces in the beginning to slide message into canvas
     mqttMessage.buffer[2] = ' ';
     strncpy(mqttMessage.buffer + 3, payload, length);
-    mqttMessage.buffer[length + 3] = ' ';
-    mqttMessage.buffer[length + 4] = '\0';
+    mqttMessage.buffer[length + 3] = ' '; // And one to slide it out
+    mqttMessage.buffer[length + 4] = '\0'; //End string here cause it's a C string
     mqttMessage.available = true;
     mqttMessage.length = length + 4;
 }
@@ -348,11 +373,16 @@ void handleClock() {
         if (currentMinute >= 25) currentHour++;
         if (currentHour > 12) currentHour = currentHour - 12;
         handleHours();
+        if (!mqttClient.connected()) setTranslucentMqt(); // Show MQT when connection is not established
+        FastLED.show();
+        FastLED.show();
     }
 }
 
 void reconnectMqtt(bool log) {
     if (!mqttClient.connected()) {
+        setTranslucentMqt();
+        FastLED.show();
         Serial.println("Connecting to MQTT");
         if (log) showInfo(info_MQTT);
         if (mqttClient.connect(
@@ -369,16 +399,13 @@ void reconnectMqtt(bool log) {
             if (log) sendData("lwt",
                      String(asctime(&tm)) + ": " + String(VERSION) + " connected",
                      true);
+            clearTranslucentMqt();
             Serial.println("MQTT connected");
         } else {
             Serial.println("MQTT connection failed");
             FastLED.delay(1000);
         }
     }
-}
-
-void reconnectMqtt() {
-    reconnectMqtt(true);
 }
 
 void callbackUpdateStarted() {
@@ -469,9 +496,11 @@ void handleSerialInput() {
 // To be called in all kinds of loop actions without MQTT
 void doBusiness() {
     adjustBrightness();
+    FastLED.show();
     handleButtons();
     handleSerialInput();
     FastLED.show();
+    yield();
 }
 
 void setup() {
@@ -523,20 +552,25 @@ void setup() {
 
     ScrollingMsg.SetFont(MatriseFontData);
     ScrollingMsg.Init(&ledMatrix, ledMatrix.Width(), ScrollingMsg.FontHeight() + 1, 0, 0);
-    ScrollingMsg.SetTextColrOptions(COLR_GRAD_AH, 0xff, 0x00, 0x00, 0x00, 0x00, 0xff);
+    ScrollingMsg.SetTextColrOptions(COLR_GRAD_AH, 0x00, 0xff, 0x00, 0x00, 0x00, 0xff);
 
     prepareMessage(VERSION, sizeof(VERSION));
     showText(false);
 
-    reconnectMqtt();
+    reconnectMqtt(true);
 }
 
 void loop() {
     Serial.printf("WiFi status: %d \n", WiFi.status());
-    reconnectMqtt();
+    FastLED.show();
+    reconnectMqtt(false);
+    FastLED.show();
     updateTime();
+    FastLED.show();
     doBusiness();
+    FastLED.show();
     handleClock();
+    FastLED.show();
     mqttClient.loop();
     if (millis() % 1000 < 2) update();
     FastLED.delay(1000);
