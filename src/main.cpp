@@ -13,7 +13,7 @@
 #define MY_NTP_SERVER "pool.ntp.org"
 #define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
 
-#define VERSION     "LetiClock-v18"
+#define VERSION     "LetiClock-v19"
 #define LED_PIN     D3
 #define LDR         A0
 #define BUTTON_L    D1

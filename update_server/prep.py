@@ -17,4 +17,4 @@ server_file.write(server_file_content)
 server_file.close()
 
 [os.remove(x) for x in glob.glob('*.bin')]
-shutil.copy2('./../.pio/build/production/firmware.bin', f"./{version}.bin")
+shutil.copy2('./../.pio/build/d1_mini/firmware.bin', f"./{version}.bin")
