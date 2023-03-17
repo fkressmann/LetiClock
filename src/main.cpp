@@ -11,7 +11,7 @@
 #include <credentials.h>
 
 #define MY_NTP_SERVER "pool.ntp.org"
-#define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03"
+#define MY_TZ "CET-1CEST,M3.5.0/02,M10.5.0/03" // Settings for middle european time
 
 #define VERSION     "LetiClock-v19"
 #define LED_PIN     D3
@@ -89,18 +89,6 @@ const int info_DONE[] = {4, 22, 36, 61, 69};
 const int info_ERROR[] = {5, 0, 23, 29, 36, 68};
 const int info_CONNECT[] = {7, 39, 36, 55, 61, 69, 90, 92};
 const int info_TIME[] = {4, 5, 12, 33, 56};
-
-const char *matrix =
-        "ESKISTLF3NF"
-        "GIZNAWZNHEZ" // reversed
-        "DREIVIERTEL"
-        "MJROVJCANGT" // reversed
-        "HALBQZW2LFP"
-        "NEBEISNIEWZ" // reversed
-        "KDREIRHF3NF"
-        "REIVNUENFLE" // reversed
-        "WACHTZEHNRS"
-        "RHUMFSHCESB"; // reversed
 
 char serialBuffer[4] = {};
 
@@ -408,7 +396,7 @@ void reconnectMqtt(bool log) {
             mqttClient.subscribe((prefix + topicMessage).c_str(), 1);
             if (log)
                 sendData("lwt",
-                         String(asctime(&tm)) + ": " + String(VERSION) + " connected",
+                         String(VERSION) + " connected",
                          true);
             clearTranslucentMqt();
             Serial.println("MQTT connected");
