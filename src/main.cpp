@@ -386,7 +386,7 @@ void showText(bool infinite) {
     if (wasMqttConnected) reconnectMqtt(false);
     mqttMessage.available = false;
     outputEnabled = true;
-    renderClock(); // Directly trigger rendering of clock;
+    if (infinite) renderClock(); // Directly trigger rendering of clock after running infinite message
 }
 
 void reconnectMqtt(bool log) {
