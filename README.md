@@ -33,7 +33,7 @@ to my docker host. And yes, this can be massively improved, but it's more than s
 ### MQTT client for receiving scrolling text messages
 C'mon on, that's fckin cool :D
 
-Reasons for choosing MQTT where that 
+Reasons for choosing MQTT were that 
 - I already have a server that I maintain for my smart home devices 
 - I didn't want to modify some firewalls in the place where it might be installed
 - I wanted a way to send messages from whatever device
