@@ -27,8 +27,8 @@ WiFiClients.
 
 The firmware server is a simple PHP script deployed in a docker container behind [Nginx Proxy Manager](https://nginxproxymanager.com/)
 which handles the encryption. A small Python script is used to parse the version out of the C++ files and modify the python script.
-Run configurations in IntelliJ are used to build the firmware, execute the Python script, build a container and deploy it
-to my docker host. And yes, this can be massively improved but its more than sufficient for my needs.
+Run configurations in IntelliJ (see .idea directory) are used to build the firmware, execute the Python script, build a container and deploy it
+to my docker host. And yes, this can be massively improved, but it's more than sufficient for my needs.
 
 ### MQTT client for receiving scrolling text messages
 C'mon on, that's fckin cool :D
@@ -65,7 +65,7 @@ I figured out that WiFiManager opens the config portal in case it cannot connect
 defined period of time. This is for the clocks use case unfortunate cause it's not often changing WiFi but used with 
 flasky connections. So in the beginning it switched very often automatically to config mode.
 
-To fix this, the config AP is activated by pressing both button on the back simultaneously. Otherwise it will just indefinitely
+To fix this, the config AP is activated by pressing both button on the back simultaneously. Otherwise, it will just indefinitely
 try to connect to the last saved WiFi AP. This works perfect in the desired environment.
 
 
