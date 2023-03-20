@@ -26,7 +26,7 @@ configuration. The encryption was mainly done to encrypt MQTT traffic, and it wo
 WiFiClients.
 
 The firmware server is a simple PHP script deployed in a docker container behind [Nginx Proxy Manager](https://nginxproxymanager.com/)
-which handles the encryption. A small Python script is used to parse the version out of the C++ files and modify the python script.
+which handles the encryption. A small Python script is used to parse the version out of the C++ files and modify the PHP script.
 Run configurations in IntelliJ (see .idea directory) are used to build the firmware, execute the Python script, build a container and deploy it
 to my docker host. And yes, this can be massively improved, but it's more than sufficient for my needs.
 
